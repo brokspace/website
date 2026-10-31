@@ -98,9 +98,14 @@ prerendered, so it stays fast).
 3. Wait for the SSL certificate (hPanel issues it automatically), then open
    https://brokspace.org.
 
+Keep the app on the `main` branch: `staging` is the integration branch and
+is not deployed.
+
 ### 3. Updates
 
-Every push to `main` rebuilds and redeploys the site. To publish new CLI
+Hostinger deploys `main`, the release branch: changes go to `staging` through
+pull requests, and merging the release PR ("release: promote staging to
+main") rebuilds and redeploys the site. To publish new CLI
 docs: `pnpm sync-docs`, commit, push.
 
 If a deploy fails, open its build log in hPanel: the usual causes are a Node

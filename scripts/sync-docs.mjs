@@ -1,7 +1,7 @@
 // Copies the user guides from brokspace/brok (docs/*.md) into
 // content/docs/, so the CLI repository stays their single source of truth.
 //
-//   node scripts/sync-docs.mjs                  # from ../brok if present, else a fresh clone
+//   node scripts/sync-docs.mjs                  # from ../brok if present, else a fresh clone of main
 //   node scripts/sync-docs.mjs --from ~/code/brok
 //
 // For each guide: the `# Title` becomes frontmatter (`title`, and the first
@@ -34,7 +34,7 @@ let source = fromArg ? resolve(fromArg) : resolve(root, '..', 'brok');
 let cleanup;
 if (!existsSync(join(source, 'docs', 'getting-started.md'))) {
   const dir = mkdtempSync(join(tmpdir(), 'brok-docs-'));
-  execFileSync('git', ['clone', '--quiet', '--depth', '1', `${REPO}.git`, dir], { stdio: 'inherit' });
+  execFileSync('git', ['clone', '--quiet', '--depth', '1', '--branch', 'main', `${REPO}.git`, dir], { stdio: 'inherit' });
   source = dir;
   cleanup = () => rmSync(dir, { recursive: true, force: true });
 }
