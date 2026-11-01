@@ -80,7 +80,12 @@ prerendered, so it stays fast).
    | Entry file       | `server.js`                                        |
 
    `server.js` starts the same server as `pnpm start` on the port Hostinger
-   gives it (`PORT`).
+   gives it (`PORT`). Hostinger may prefill **Output directory** `dist` and
+   no entry file: change them, the build writes to `build/`.
+
+   The repository pins pnpm 10 (`packageManager`): the corepack on
+   Hostinger's Node 22 cannot start pnpm 11 or newer (`Cannot find module
+   .../pnpm/<version>/bin/pnpm.cjs`).
 3. Optional, **Environment variables**: `GITHUB_TOKEN`, a fine-grained token
    with no permissions at all (public data only). It raises the GitHub API
    limit for the stars count from 60 to 5,000 requests an hour. Without it the
