@@ -15,26 +15,40 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { Command } from '@/components/landing/copy-button';
 import { InstallTabs } from '@/components/landing/install-tabs';
+import { LanguageSwitch } from '@/components/landing/language-switch';
 import { TerminalDemo } from '@/components/landing/terminal-demo';
 import { Logo, Mark } from '@/components/logo';
 import { cn } from '@/lib/cn';
 import { fetchStars, formatStars, useStars } from '@/lib/github';
-import { appName, links, pitch, siteUrl, tagline } from '@/lib/shared';
+import { i18n, langFromPath, localize, ogLocale } from '@/lib/i18n';
+import { t } from '@/lib/messages';
+import { appName, links, siteUrl } from '@/lib/shared';
+import { useLang, useMessages } from '@/lib/use-lang';
 import type { Route } from './+types/home';
 
-export function meta(_: Route.MetaArgs) {
-  const title = `${appName}: ${tagline}`;
-  const description = `${pitch} Brokspace indexes your repositories on your machine and gives your LLM and your coding agents the context they need.`;
+export function meta({ location }: Route.MetaArgs) {
+  const lang = langFromPath(location.pathname);
+  const m = t(lang);
+  const title = `${appName}: ${m.tagline}`;
+  const url = `${siteUrl}${localize(lang, '/')}`.replace(/\/$/, '') || siteUrl;
   return [
     { title },
-    { name: 'description', content: description },
+    { name: 'description', content: m.meta.description },
     { property: 'og:title', content: title },
-    { property: 'og:description', content: description },
-    { property: 'og:url', content: siteUrl },
+    { property: 'og:description', content: m.meta.description },
+    { property: 'og:url', content: url },
     { property: 'og:image', content: `${siteUrl}/og-cover.png` },
     { property: 'og:type', content: 'website' },
+    { property: 'og:locale', content: ogLocale[lang] },
     { name: 'twitter:card', content: 'summary_large_image' },
-    { tagName: 'link', rel: 'canonical', href: siteUrl },
+    { tagName: 'link', rel: 'canonical', href: url },
+    ...i18n.languages.map((other) => ({
+      tagName: 'link',
+      rel: 'alternate',
+      hrefLang: other === 'pt-br' ? 'pt-BR' : other,
+      href: `${siteUrl}${localize(other, '/')}`.replace(/\/$/, ''),
+    })),
+    { tagName: 'link', rel: 'alternate', hrefLang: 'x-default', href: siteUrl },
   ];
 }
 
@@ -44,6 +58,7 @@ export async function loader() {
 
 export default function Home({ loaderData }: Route.ComponentProps) {
   const stars = useStars(loaderData.stars);
+  const m = useMessages();
 
   return (
     <div className="dark flex min-h-screen flex-col bg-nordic text-snow">
@@ -51,7 +66,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         href="#main"
         className="sr-only z-50 rounded-md bg-snow px-3 py-2 text-nordic focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
       >
-        Skip to content
+        {m.nav.skip}
       </a>
       <Header stars={stars} />
       <main id="main" className="flex-1">
@@ -68,9 +83,15 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   );
 }
 
+/** A link to a page of the site, in the current language. */
+function SiteLink({ to, ...props }: React.ComponentProps<typeof Link> & { to: string }) {
+  return <Link to={localize(useLang(), to)} {...props} />;
+}
+
 /* ------------------------------------------------------------------ */
 
 function Header({ stars }: { stars: number | null }) {
+  const m = useMessages().nav;
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -87,38 +108,41 @@ function Header({ stars }: { stars: number | null }) {
         scrolled ? 'border-white/8 bg-nordic/85 backdrop-blur-xl' : 'border-transparent',
       )}
     >
-      <nav aria-label="Main" className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5 sm:px-8">
-        <Link
+      <nav aria-label={m.main} className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5 sm:px-8">
+        <SiteLink
           to="/"
-          aria-label="Brokspace home"
+          aria-label={m.home}
           className="rounded-md focus-visible:outline-2 focus-visible:outline-forge"
         >
           <Logo />
-        </Link>
+        </SiteLink>
         <div className="hidden items-center gap-1 text-sm text-mist md:flex">
-          <NavLink to="/docs">Docs</NavLink>
-          <NavLink to="/docs/ide">IDE</NavLink>
+          <NavLink to="/docs">{m.docs}</NavLink>
+          <NavLink to="/docs/ide">{m.ide}</NavLink>
           <NavLink to="/docs/hub">
-            Hub
+            {m.hub}
             <span className="ml-1.5 rounded-full border border-white/12 px-1.5 py-px text-[10px] tracking-wide text-ink-400 uppercase">
-              Soon
+              {m.soon}
             </span>
           </NavLink>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <StarsPill stars={stars} />
-          <Link
+          <LanguageSwitch />
+          <div className="hidden sm:block">
+            <StarsPill stars={stars} />
+          </div>
+          <SiteLink
             to="/docs/getting-started"
             className="hidden h-9 items-center rounded-full bg-snow px-4 text-sm font-medium text-nordic transition-colors hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forge sm:inline-flex"
           >
-            Get started
-          </Link>
-          <Link
+            {m.getStarted}
+          </SiteLink>
+          <SiteLink
             to="/docs"
             className="inline-flex h-9 items-center rounded-full px-3 text-sm text-mist hover:text-snow md:hidden"
           >
-            Docs
-          </Link>
+            {m.docs}
+          </SiteLink>
         </div>
       </nav>
     </header>
@@ -127,12 +151,12 @@ function Header({ stars }: { stars: number | null }) {
 
 function NavLink({ to, children }: { to: string; children: ReactNode }) {
   return (
-    <Link
+    <SiteLink
       to={to}
       className="inline-flex items-center rounded-full px-3 py-1.5 transition-colors hover:bg-white/6 hover:text-snow focus-visible:outline-2 focus-visible:outline-forge"
     >
       {children}
-    </Link>
+    </SiteLink>
   );
 }
 
@@ -145,6 +169,7 @@ function GitHubIcon({ className }: { className?: string }) {
 }
 
 function StarsPill({ stars, className }: { stars: number | null; className?: string }) {
+  const m = useMessages().stars;
   return (
     <a
       href={links.brok}
@@ -152,10 +177,10 @@ function StarsPill({ stars, className }: { stars: number | null; className?: str
         'group inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] pr-3 pl-2.5 text-sm text-mist transition-colors hover:border-white/20 hover:text-snow focus-visible:outline-2 focus-visible:outline-forge',
         className,
       )}
-      aria-label={stars === null ? 'Brokspace on GitHub' : `Star Brokspace on GitHub, ${stars} stars`}
+      aria-label={stars === null ? m.onGitHub : m.label(stars)}
     >
       <GitHubIcon className="size-4" />
-      <span className="hidden sm:inline">Star</span>
+      <span className="hidden sm:inline">{m.star}</span>
       <span className="flex items-center gap-1 border-l border-white/10 pl-2 tabular-nums">
         <Star className="size-3.5 text-forge transition-transform group-hover:scale-110" aria-hidden="true" />
         {stars === null ? 'GitHub' : formatStars(stars)}
@@ -167,6 +192,7 @@ function StarsPill({ stars, className }: { stars: number | null; className?: str
 /* ------------------------------------------------------------------ */
 
 function Hero({ stars }: { stars: number | null }) {
+  const m = useMessages().hero;
   return (
     <section className="relative isolate overflow-hidden">
       {/* Fold lines fading out from the top, the ridges and their glow below. */}
@@ -182,35 +208,34 @@ function Hero({ stars }: { stars: number | null }) {
       />
       <div className="mx-auto max-w-6xl px-5 pt-16 pb-24 sm:px-8 sm:pt-24 sm:pb-32">
         <div className="mx-auto max-w-4xl text-center">
-          <Link
+          <SiteLink
             to="/docs/ide"
             className="inline-flex animate-rise items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] py-1 pr-3 pl-1 text-[13px] text-mist backdrop-blur transition-colors hover:border-forge/40 hover:text-snow"
           >
             <span className="rounded-full bg-forge/15 px-2 py-0.5 text-xs font-medium text-forge-300">
-              New
+              {m.badge}
             </span>
-            Brokspace IDE: the same workspace, in an IDE
+            {m.announcement}
             <ArrowRight className="size-3.5" aria-hidden="true" />
-          </Link>
-          <h1 className="mt-8 animate-rise text-[clamp(3rem,9vw,6.75rem)] leading-[0.92] font-semibold tracking-[-0.045em] [animation-delay:80ms]">
-            Your workspace,
+          </SiteLink>
+          <h1 className="mt-8 animate-rise text-[clamp(3rem,9vw,6.75rem)] leading-[0.92] font-semibold tracking-[-0.045em] text-balance [animation-delay:80ms]">
+            {m.titleTop}
             <br />
             <span className="bg-gradient-to-br from-forge-300 via-forge to-forge-600 bg-clip-text text-transparent">
-              understood.
+              {m.titleAccent}
             </span>
           </h1>
           <p className="mx-auto mt-7 max-w-2xl animate-rise text-balance text-lg leading-relaxed text-mist [animation-delay:160ms] sm:text-xl">
-            Brokspace indexes every repository you work in, on your machine, and gives you, your LLM and your
-            coding agents the context they are missing.
+            {m.lead}
           </p>
           <div className="mt-10 flex animate-rise flex-col items-center justify-center gap-3 [animation-delay:240ms] sm:flex-row">
-            <Link
+            <SiteLink
               to="/docs/getting-started"
               className="inline-flex h-12 items-center gap-2 rounded-full bg-forge px-6 font-medium text-nordic shadow-[0_8px_30px_-6px_rgba(255,138,61,0.55)] transition-[background-color,transform] hover:-translate-y-px hover:bg-forge-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forge"
             >
-              Get started
+              {m.cta}
               <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            </SiteLink>
             <StarsPill stars={stars} className="h-12 px-5" />
           </div>
           <Command
@@ -229,19 +254,12 @@ function Hero({ stars }: { stars: number | null }) {
 /* ------------------------------------------------------------------ */
 
 function WorksWith() {
-  const tools = [
-    'Claude Code',
-    'Cursor',
-    'VS Code + Copilot',
-    'Codex',
-    'Ollama',
-    'LM Studio',
-    'any OpenAI-compatible API',
-  ];
+  const m = useMessages().worksWith;
+  const tools = ['Claude Code', 'Cursor', 'VS Code + Copilot', 'Codex', 'Ollama', 'LM Studio', m.anyApi];
   return (
-    <section aria-label="Works with" className="border-y border-white/6 bg-ink-850/40">
+    <section aria-label={m.title} className="border-y border-white/6 bg-ink-850/40">
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-5 py-8 sm:px-8 lg:flex-row lg:gap-8">
-        <p className="shrink-0 font-mono text-xs tracking-widest text-ink-400 uppercase">Works with</p>
+        <p className="shrink-0 font-mono text-xs tracking-widest text-ink-400 uppercase">{m.title}</p>
         <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-[15px] text-mist lg:justify-start">
           {tools.map((tool) => (
             <li key={tool} className="whitespace-nowrap">
@@ -270,7 +288,7 @@ function SectionHeading({
   return (
     <div className={cn('max-w-2xl', className)}>
       <p className="font-mono text-xs tracking-widest text-forge uppercase">{eyebrow}</p>
-      <h2 className="mt-4 text-[clamp(2rem,4.5vw,3.25rem)] leading-[1.02] font-semibold tracking-[-0.035em]">
+      <h2 className="mt-4 text-[clamp(2rem,4.5vw,3.25rem)] leading-[1.02] font-semibold tracking-[-0.035em] text-balance">
         {title}
       </h2>
       {children && <p className="mt-5 text-lg leading-relaxed text-mist">{children}</p>}
@@ -337,17 +355,17 @@ function Chips({ items }: { items: string[] }) {
 }
 
 function Features() {
+  const m = useMessages().features;
   return (
     <section id="features" className="mx-auto max-w-6xl px-5 py-24 sm:px-8 sm:py-32">
-      <SectionHeading eyebrow="What it does" title="Context, everywhere you work.">
-        One local index of your code, shared by the terminal, the IDE, your LLM and every coding agent you
-        use.
+      <SectionHeading eyebrow={m.eyebrow} title={m.title}>
+        {m.lead}
       </SectionHeading>
 
       <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card
           icon={<Search className="size-[18px]" />}
-          title="Search that reads code like you do"
+          title={m.search.title}
           className="lg:col-span-2"
           visual={
             <Mono>
@@ -374,13 +392,12 @@ function Features() {
             </Mono>
           }
         >
-          Functions, classes and doc sections are indexed whole, then found by meaning or by name: hybrid BM25
-          and semantic search over one repository, its submodules, or a folder full of them.
+          {m.search.body}
         </Card>
 
         <Card
           icon={<MessageSquareText className="size-[18px]" />}
-          title="Answers that cite their sources"
+          title={m.answers.title}
           visual={
             <Mono>
               <p className="text-ink-400">Sources (qwen2.5-coder:7b via ollama):</p>
@@ -389,13 +406,12 @@ function Features() {
             </Mono>
           }
         >
-          Ask Ollama, LM Studio or any OpenAI-compatible model about your workspace. Every answer lists the
-          code it was built from.
+          {m.answers.body}
         </Card>
 
         <Card
           icon={<Bot className="size-[18px]" />}
-          title="Context for the agents you already use"
+          title={m.agents.title}
           visual={
             <div className="space-y-3">
               <Command command="brok setup agents" className="bg-[#0D1116]" />
@@ -403,12 +419,12 @@ function Features() {
             </div>
           }
         >
-          One command gives Claude Code, Cursor, Copilot and Codex a search tool over MCP, plus your skills.
+          {m.agents.body}
         </Card>
 
         <Card
           icon={<GitCommitHorizontal className="size-[18px]" />}
-          title="Reviews and commit messages"
+          title={m.review.title}
           visual={
             <Mono>
               <p>
@@ -422,26 +438,24 @@ function Features() {
             </Mono>
           }
         >
-          A first-pass review of your uncommitted, staged or branch changes, and the commit message written
-          from the staged diff.
+          {m.review.body}
         </Card>
 
         <Card
           icon={<Sparkles className="size-[18px]" />}
-          title="20 skills, built in"
+          title={m.skills.title}
           visual={
             <Chips
               items={['tdd', 'code-review', 'grill-me', 'to-spec', 'diagnosing-bugs', 'handoff', '+14']}
             />
           }
         >
-          Proven workflows your LLM and your agents follow. Write your own in a SKILL.md and share it with
-          your team.
+          {m.skills.body}
         </Card>
 
         <Card
           icon={<Blocks className="size-[18px]" />}
-          title="Shards: your workspace, programmable"
+          title={m.shards.title}
           className="md:col-span-2 lg:col-span-3"
           visual={
             <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
@@ -460,9 +474,7 @@ function Features() {
             </div>
           }
         >
-          Small programs in any language that react to workspace events on a local bus, each limited to the
-          files, programs and network it declares up front. Start from the template, share them as git
-          repositories.
+          {m.shards.body}
         </Card>
       </div>
     </section>
@@ -472,22 +484,11 @@ function Features() {
 /* ------------------------------------------------------------------ */
 
 function LocalFirst() {
-  const points = [
-    {
-      icon: <HardDrive className="size-5" />,
-      title: 'Indexed on your machine',
-      body: 'The index lives in .brokspace/, next to your code. No account, no upload, works offline.',
-    },
-    {
-      icon: <Bot className="size-5" />,
-      title: 'The model you choose',
-      body: 'A local model by default. A hosted one only when you pick it, even for a single question.',
-    },
-    {
-      icon: <RefreshCw className="size-5" />,
-      title: 'Always up to date',
-      body: 'Saves, commits, pulls and branch switches reach the index within seconds.',
-    },
+  const m = useMessages().localFirst;
+  const icons = [
+    <HardDrive key="disk" className="size-5" />,
+    <Bot key="bot" className="size-5" />,
+    <RefreshCw key="sync" className="size-5" />,
   ];
   return (
     <section className="relative isolate overflow-hidden border-y border-white/6">
@@ -497,21 +498,20 @@ function LocalFirst() {
       />
       <div className="mx-auto grid max-w-6xl gap-12 px-5 py-24 sm:px-8 lg:grid-cols-[1.1fr_1fr] lg:items-center">
         <SectionHeading
-          eyebrow="Local-first"
+          eyebrow={m.eyebrow}
           title={
             <>
-              Nothing leaves your machine.
-              <br className="hidden sm:block" /> Unless you say so.
+              {m.titleTop}
+              <br className="hidden sm:block" /> {m.titleBottom}
             </>
           }
         >
-          Brokspace runs next to your code. Your repositories are never sent anywhere to be indexed, and
-          answers come from the model you point it at.
+          {m.lead}
         </SectionHeading>
         <ul className="space-y-6">
-          {points.map((point) => (
+          {m.points.map((point, i) => (
             <li key={point.title} className="flex gap-4">
-              <div className="mt-0.5 text-forge">{point.icon}</div>
+              <div className="mt-0.5 text-forge">{icons[i]}</div>
               <div>
                 <h3 className="font-semibold">{point.title}</h3>
                 <p className="mt-1 leading-relaxed text-mist">{point.body}</p>
@@ -527,30 +527,29 @@ function LocalFirst() {
 /* ------------------------------------------------------------------ */
 
 function Modes() {
+  const m = useMessages().modes;
+  const commands: [string, string][] = [
+    ['search', m.commands.search],
+    ['ask', m.commands.ask],
+    ['chat', m.commands.chat],
+    ['review', m.commands.review],
+    ['commit', m.commands.commit],
+    ['skill run', m.commands.skill],
+    ['shard install', m.commands.shard],
+  ];
   return (
     <section className="mx-auto max-w-6xl px-5 py-24 sm:px-8 sm:py-32">
-      <SectionHeading eyebrow="CLI mode, IDE mode" title="One workspace. Two ways in.">
-        Use brok in any terminal and editor, or open the same workspace in Brokspace IDE. Both read the same
-        .brokspace/ folder, so you can switch at any time.
+      <SectionHeading eyebrow={m.eyebrow} title={m.title}>
+        {m.lead}
       </SectionHeading>
 
       <div className="mt-14 grid gap-4 lg:grid-cols-[1fr_1.5fr]">
         <article className="flex min-w-0 flex-col rounded-2xl border border-white/8 bg-gradient-to-b from-white/[0.035] to-transparent p-6 sm:p-7">
           <p className="font-mono text-xs tracking-widest text-ink-400 uppercase">CLI</p>
           <h3 className="mt-3 text-2xl font-semibold tracking-[-0.025em]">brok</h3>
-          <p className="mt-2 leading-relaxed text-mist">
-            Every feature, scriptable, with JSON output for your own tools.
-          </p>
+          <p className="mt-2 leading-relaxed text-mist">{m.cliBody}</p>
           <Mono className="mt-6 flex-1 text-[12.5px]">
-            {[
-              ['search', 'find code by meaning or by name'],
-              ['ask', 'an answer, with sources'],
-              ['chat', 'follow-up questions'],
-              ['review', 'review your changes'],
-              ['commit', 'write the commit message'],
-              ['skill run', 'run a workflow'],
-              ['shard install', 'add an integration'],
-            ].map(([command, what]) => (
+            {commands.map(([command, what]) => (
               <p key={command} className="flex gap-3 whitespace-nowrap">
                 <span className="w-36 shrink-0 text-snow">
                   <span className="text-forge">brok </span>
@@ -560,33 +559,30 @@ function Modes() {
               </p>
             ))}
           </Mono>
-          <Link
+          <SiteLink
             to="/docs/getting-started"
             className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-snow hover:text-forge-300"
           >
-            Getting started <ArrowRight className="size-4" aria-hidden="true" />
-          </Link>
+            {m.gettingStarted} <ArrowRight className="size-4" aria-hidden="true" />
+          </SiteLink>
         </article>
 
         <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-gradient-to-b from-white/[0.035] to-transparent">
           <div className="p-6 sm:p-7">
             <p className="font-mono text-xs tracking-widest text-ink-400 uppercase">IDE</p>
             <h3 className="mt-3 text-2xl font-semibold tracking-[-0.025em]">Brokspace IDE</h3>
-            <p className="mt-2 max-w-lg leading-relaxed text-mist">
-              Built on Eclipse Theia, with brok inside: start from a question, chat with the Brokspace agent,
-              review and commit in a click. Open VSX extensions work too.
-            </p>
-            <Link
+            <p className="mt-2 max-w-lg leading-relaxed text-mist">{m.ideBody}</p>
+            <SiteLink
               to="/docs/ide"
               className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-snow hover:text-forge-300"
             >
-              macOS, Linux and Windows <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+              {m.platforms} <ArrowRight className="size-4" aria-hidden="true" />
+            </SiteLink>
           </div>
           <div className="relative mt-auto pl-6 sm:pl-7">
             <img
               src="/images/ide-home.png"
-              alt="Brokspace IDE home page, with a question box and the Brokspace view in the sidebar"
+              alt={m.ideAlt}
               width={1440}
               height={900}
               loading="lazy"
@@ -620,34 +616,27 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 function GetStarted() {
+  const m = useMessages().getStarted;
   return (
     <section id="install" className="border-t border-white/6 bg-ink-850/30">
       <div className="mx-auto grid max-w-6xl gap-14 px-5 py-24 sm:px-8 sm:py-32 lg:grid-cols-[1fr_1.25fr]">
-        <SectionHeading
-          eyebrow="Get started"
-          title="Three commands to a workspace that answers back."
-          className="lg:sticky lg:top-28 lg:self-start"
-        >
-          About fifteen minutes from zero, including a local model. Search works right away, even without one.
+        <SectionHeading eyebrow={m.eyebrow} title={m.title} className="lg:sticky lg:top-28 lg:self-start">
+          {m.lead}
         </SectionHeading>
         <ol>
-          <Step n={1} title="Install brok">
+          <Step n={1} title={m.install}>
             <InstallTabs />
           </Step>
-          <Step n={2} title="Set up your workspace">
+          <Step n={2} title={m.setup}>
             <Command command="cd ~/code/my-project && brok init" />
-            <p className="mt-3 text-sm text-ink-400">
-              Six guided steps: it picks a model that fits your machine, indexes your code and connects your
-              coding agents. It asks before anything big.
-            </p>
+            <p className="mt-3 text-sm text-ink-400">{m.setupNote}</p>
           </Step>
-          <Step n={3} title="Ask away">
-            <Command command='brok ask "how does the refresh flow work?"' />
+          <Step n={3} title={m.ask}>
+            <Command command={m.askCommand} />
             <p className="mt-3 text-sm text-ink-400">
-              Or <code className="font-mono text-mist">brok search</code>,{' '}
+              {m.askNoteBefore} <code className="font-mono text-mist">brok search</code>,{' '}
               <code className="font-mono text-mist">brok chat</code>,{' '}
-              <code className="font-mono text-mist">brok review</code>. The index follows your edits from now
-              on.
+              <code className="font-mono text-mist">brok review</code>. {m.askNoteAfter}
             </p>
           </Step>
         </ol>
@@ -658,20 +647,16 @@ function GetStarted() {
 
 /* ------------------------------------------------------------------ */
 
-const REPOS = [
-  { name: 'brok', description: 'The CLI: index, search, ask, review, skills and shards.', href: links.brok },
-  {
-    name: 'brok-agent',
-    description: 'The helper that tracks changes and talks to the LLM.',
-    href: links.agent,
-  },
-  { name: 'brok-sdk', description: 'Rust SDK and protocol for the event bus.', href: links.sdk },
-  { name: 'brok-shard-template', description: 'Start a new shard in minutes.', href: links.shardTemplate },
-  { name: 'ide', description: 'Brokspace IDE, built on Eclipse Theia.', href: links.ide },
-  { name: 'example-nestjs', description: 'A sample project to try Brokspace on.', href: links.example },
-];
-
 function OpenSource({ stars }: { stars: number | null }) {
+  const m = useMessages().openSource;
+  const repos = [
+    { name: 'brok', description: m.repos.brok, href: links.brok },
+    { name: 'brok-agent', description: m.repos.agent, href: links.agent },
+    { name: 'brok-sdk', description: m.repos.sdk, href: links.sdk },
+    { name: 'brok-shard-template', description: m.repos.shardTemplate, href: links.shardTemplate },
+    { name: 'ide', description: m.repos.ide, href: links.ide },
+    { name: 'example-nestjs', description: m.repos.example, href: links.example },
+  ];
   return (
     <section className="relative isolate overflow-hidden">
       <div
@@ -682,24 +667,21 @@ function OpenSource({ stars }: { stars: number | null }) {
         <div className="mx-auto max-w-3xl text-center">
           <Mark className="mx-auto h-14" />
           <h2 className="mt-8 text-[clamp(2.25rem,6vw,4.5rem)] leading-[0.98] font-semibold tracking-[-0.04em]">
-            Built in the open.
+            {m.title}
           </h2>
-          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-mist">
-            MIT or Apache-2.0, developed on GitHub. Star the project, open an issue, ask in Discussions, or
-            build a shard.
-          </p>
+          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-mist">{m.lead}</p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <StarsPill stars={stars} className="h-12 px-5" />
             <a
               href={links.discussions}
               className="inline-flex h-12 items-center gap-2 rounded-full px-5 text-mist transition-colors hover:text-snow"
             >
-              Join the discussion <ArrowUpRight className="size-4" aria-hidden="true" />
+              {m.discuss} <ArrowUpRight className="size-4" aria-hidden="true" />
             </a>
           </div>
         </div>
         <ul className="mt-16 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {REPOS.map((repo) => (
+          {repos.map((repo) => (
             <li key={repo.name}>
               <a
                 href={repo.href}
@@ -728,31 +710,33 @@ function OpenSource({ stars }: { stars: number | null }) {
 /* ------------------------------------------------------------------ */
 
 function Footer() {
+  const all = useMessages();
+  const m = all.footer;
   const columns = [
     {
-      title: 'Product',
+      title: m.product,
       items: [
-        { label: 'Docs', to: '/docs' },
-        { label: 'Getting started', to: '/docs/getting-started' },
-        { label: 'Brokspace IDE', to: '/docs/ide' },
-        { label: 'Shard Hub', to: '/docs/hub' },
+        { label: m.docs, to: '/docs' },
+        { label: m.gettingStarted, to: '/docs/getting-started' },
+        { label: m.ide, to: '/docs/ide' },
+        { label: m.hub, to: '/docs/hub' },
       ],
     },
     {
-      title: 'Build',
+      title: m.build,
       items: [
-        { label: 'Skills', to: '/docs/skills' },
-        { label: 'Shards', to: '/docs/shards' },
-        { label: 'Integrations', to: '/docs/integrations' },
+        { label: m.skills, to: '/docs/skills' },
+        { label: m.shards, to: '/docs/shards' },
+        { label: m.integrations, to: '/docs/integrations' },
         { label: 'llms.txt', to: '/llms.txt', external: true },
       ],
     },
     {
-      title: 'Community',
+      title: m.community,
       items: [
         { label: 'GitHub', to: links.github, external: true },
-        { label: 'Discussions', to: links.discussions, external: true },
-        { label: 'Releases', to: links.releases, external: true },
+        { label: m.discussions, to: links.discussions, external: true },
+        { label: m.releases, to: links.releases, external: true },
       ],
     },
   ];
@@ -762,7 +746,7 @@ function Footer() {
       <div className="mx-auto grid max-w-6xl gap-12 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_repeat(3,1fr)]">
         <div>
           <Logo />
-          <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-400">{pitch}</p>
+          <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-400">{all.pitch}</p>
         </div>
         {columns.map((column) => (
           <nav key={column.title} aria-label={column.title}>
@@ -775,9 +759,9 @@ function Footer() {
                       {item.label}
                     </a>
                   ) : (
-                    <Link to={item.to} className="transition-colors hover:text-snow">
+                    <SiteLink to={item.to} className="transition-colors hover:text-snow">
                       {item.label}
-                    </Link>
+                    </SiteLink>
                   )}
                 </li>
               ))}
@@ -788,10 +772,9 @@ function Footer() {
       <div className="border-t border-white/6">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-6 text-xs text-ink-500 sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <p>
-            © <span suppressHydrationWarning>{new Date().getFullYear()}</span> Brokspace. Code under MIT or
-            Apache-2.0.
+            © <span suppressHydrationWarning>{new Date().getFullYear()}</span> Brokspace. {m.license}
           </p>
-          <p className="font-mono tracking-widest uppercase">{tagline}</p>
+          <p className="font-mono tracking-widest uppercase">{all.tagline}</p>
         </div>
       </div>
     </footer>

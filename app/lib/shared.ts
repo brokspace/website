@@ -1,4 +1,5 @@
 import { createGetUrl } from 'fumadocs-core/source';
+import { i18n } from './i18n';
 
 export const appName = 'Brokspace';
 export const siteUrl = 'https://brokspace.org';
@@ -38,16 +39,21 @@ export const syncedGuides = [
   'architecture',
 ];
 
+/** `getting-started.md` and `getting-started.pt-br.md` are both the getting-started guide. */
+function guideName(path: string) {
+  return path.replace(/\.mdx?$/, '').replace(/\.pt-br$/, '');
+}
+
 export function isSyncedGuide(path: string) {
-  return syncedGuides.includes(path.replace(/\.mdx?$/, ''));
+  return syncedGuides.includes(guideName(path));
 }
 
 export function editUrl(path: string) {
-  if (isSyncedGuide(path)) return `${links.brok}/blob/main/docs/${path.replace(/\.mdx?$/, '')}.md`;
+  if (isSyncedGuide(path)) return `${links.brok}/blob/main/docs/${guideName(path)}.md`;
   return `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${path}`;
 }
 
-const getContentUrl = createGetUrl(docsContentRoute);
+const getContentUrl = createGetUrl(docsContentRoute, i18n);
 
 export function getPageMarkdownUrl(page: { slugs: string[]; locale?: string }) {
   const segments = [...page.slugs, 'content.md'];
@@ -55,7 +61,7 @@ export function getPageMarkdownUrl(page: { slugs: string[]; locale?: string }) {
   return { segments, url: getContentUrl(segments, page.locale) };
 }
 
-const getImageUrl = createGetUrl(docsImageRoute);
+const getImageUrl = createGetUrl(docsImageRoute, i18n);
 
 export function getPageImageUrl(page: { slugs: string[]; locale?: string }) {
   const segments = [...page.slugs, 'image.webp'];

@@ -1,0 +1,20 @@
+{
+  "title": "Brokspace",
+  "pages": [
+    "---Início---",
+    "index",
+    "getting-started",
+    "---Guias---",
+    "local-llm",
+    "skills",
+    "shards",
+    "integrations",
+    "---Brokspace IDE---",
+    "ide",
+    "---Ecossistema---",
+    "hub",
+    "---Referência---",
+    "configuration",
+    "architecture"
+  ]
+}
