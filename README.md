@@ -100,6 +100,10 @@ prerendered, so it stays fast).
    gives it (`PORT`). Hostinger may prefill **Output directory** `dist` and
    no entry file: change them, the build writes to `build/`.
 
+   If the build fails while prerendering (`Prerender: Request failed ...
+   ECONNREFUSED`), add the build environment variable
+   `BROKSPACE_PRERENDER=false`: the server renders every page anyway.
+
    The repository pins pnpm 10 (`packageManager`): the corepack on
    Hostinger's Node 22 cannot start pnpm 11 or newer (`Cannot find module
    .../pnpm/<version>/bin/pnpm.cjs`).
