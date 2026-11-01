@@ -6,9 +6,14 @@ import { getPageImageUrl } from './app/lib/shared';
 
 const getUrl = createGetUrl('/docs', i18n);
 
+// Pages are prerendered at build time and also rendered by the server, so
+// BROKSPACE_PRERENDER=false (a build environment variable) skips the
+// prerender step where the build host cannot reach its own local server.
+const prerender = process.env.BROKSPACE_PRERENDER !== 'false';
+
 export default {
   ssr: true,
-  async prerender({ getStaticPaths }) {
+  prerender: prerender && async function prerenderPaths({ getStaticPaths }) {
     const paths: string[] = [];
     const excluded: string[] = ['/api/search', '/install.sh', '/install.ps1'];
 
