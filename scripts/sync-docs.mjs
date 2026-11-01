@@ -34,7 +34,9 @@ let source = fromArg ? resolve(fromArg) : resolve(root, '..', 'brok');
 let cleanup;
 if (!existsSync(join(source, 'docs', 'getting-started.md'))) {
   const dir = mkdtempSync(join(tmpdir(), 'brok-docs-'));
-  execFileSync('git', ['clone', '--quiet', '--depth', '1', '--branch', 'main', `${REPO}.git`, dir], { stdio: 'inherit' });
+  execFileSync('git', ['clone', '--quiet', '--depth', '1', '--branch', 'main', `${REPO}.git`, dir], {
+    stdio: 'inherit',
+  });
   source = dir;
   cleanup = () => rmSync(dir, { recursive: true, force: true });
 }
