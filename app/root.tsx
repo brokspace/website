@@ -1,8 +1,19 @@
 import { RootProvider } from 'fumadocs-ui/provider/react-router';
-import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
+import {
+  isRouteErrorResponse,
+  Links,
+  Meta,
+  Outlet,
+  Scripts,
+  ScrollRestoration,
+  useLocation,
+  useNavigate,
+} from 'react-router';
 import type { Route } from './+types/root';
 import './app.css';
 import { isMarkdownPreferred, rewritePath } from 'fumadocs-core/negotiation';
+import { htmlLang, i18n, isLang, langFromPath, locales, switchLang } from '@/lib/i18n';
+import { uiPtBr } from '@/lib/messages';
 import { appName, docsContentRoute, docsRoute } from '@/lib/shared';
 import NotFound from './routes/not-found';
 
@@ -20,8 +31,12 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const lang = langFromPath(pathname);
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={htmlLang[lang]} suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -30,7 +45,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body className="flex flex-col min-h-screen">
-        <RootProvider theme={{ defaultTheme: 'dark' }}>{children}</RootProvider>
+        <RootProvider
+          theme={{ defaultTheme: 'dark' }}
+          i18n={{
+            locale: lang,
+            locales,
+            defaultLanguage: i18n.defaultLanguage,
+            hideLocale: i18n.hideLocale,
+            translations: lang === 'pt-br' ? uiPtBr : undefined,
+            onLocaleChange: (next) => {
+              if (isLang(next)) navigate(switchLang(pathname, next));
+            },
+          }}
+        >
+          {children}
+        </RootProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

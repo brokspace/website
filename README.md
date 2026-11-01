@@ -33,6 +33,8 @@ pnpm build && pnpm start   # production build, http://localhost:3000
 | `app/routes/og.docs.tsx`  | Open Graph images for docs pages                                                                 |
 | `content/docs/`           | The documentation (MDX and Markdown); order and sections in `meta.json`                          |
 | `public/`                 | Favicons, social image, brand SVGs, IDE screenshots                                              |
+| `app/lib/i18n.ts`         | Languages, URL helpers (`localize`, `switchLang`)                                                |
+| `app/lib/messages.ts`     | Every landing and site string in English and Portuguese, plus Fumadocs UI strings in Portuguese  |
 
 ## Documentation
 
@@ -57,6 +59,21 @@ Two kinds of pages live in `content/docs/`:
 Every page is also served as Markdown for LLMs: `/llms.txt`,
 `/llms-full.txt`, and `/docs/<page>.md`.
 
+## Languages
+
+English lives at `/` and `/docs/...`, Brazilian Portuguese under `/pt-br`
+(`/pt-br/docs/...`). The header and the docs sidebar switch between them on
+the same page.
+
+- **Landing and site chrome:** `app/lib/messages.ts`. The Portuguese object
+  has the type of the English one, so `pnpm types:check` fails when a string
+  is missing.
+- **Docs:** a translation sits next to its page with a `.pt-br` suffix
+  (`ide.pt-br.mdx`, `meta.pt-br.json`); link to other pages with `/pt-br/docs/...`.
+  A page without a translation (the synced CLI guides today) shows the
+  English page under `/pt-br`, with a note saying so.
+- **Search** returns results in the language of the page.
+
 ## Deploy to Hostinger
 
 The site runs as a **Node.js web app** on Hostinger (server rendering is
@@ -80,7 +97,12 @@ prerendered, so it stays fast).
    | Entry file       | `server.js`                                        |
 
    `server.js` starts the same server as `pnpm start` on the port Hostinger
-   gives it (`PORT`).
+   gives it (`PORT`). Hostinger may prefill **Output directory** `dist` and
+   no entry file: change them, the build writes to `build/`.
+
+   The repository pins pnpm 10 (`packageManager`): the corepack on
+   Hostinger's Node 22 cannot start pnpm 11 or newer (`Cannot find module
+   .../pnpm/<version>/bin/pnpm.cjs`).
 3. Optional, **Environment variables**: `GITHUB_TOKEN`, a fine-grained token
    with no permissions at all (public data only). It raises the GitHub API
    limit for the stars count from 60 to 5,000 requests an hour. Without it the

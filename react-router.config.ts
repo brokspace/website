@@ -1,9 +1,10 @@
 import { glob } from 'node:fs/promises';
 import type { Config } from '@react-router/dev/config';
 import { createGetUrl, getSlugs } from 'fumadocs-core/source';
+import { i18n } from './app/lib/i18n';
 import { getPageImageUrl } from './app/lib/shared';
 
-const getUrl = createGetUrl('/docs');
+const getUrl = createGetUrl('/docs', i18n);
 
 export default {
   ssr: true,
@@ -15,11 +16,17 @@ export default {
       if (!excluded.includes(path)) paths.push(path);
     }
 
+    // Every page exists in every language: a missing translation shows the English page.
+    const pages = new Set<string>();
     for await (const entry of glob(['**/*.mdx', '**/*.md'], { cwd: 'content/docs' })) {
-      const slugs = getSlugs(entry);
-
-      paths.push(getUrl(slugs));
-      paths.push(getPageImageUrl({ slugs }).url);
+      pages.add(getSlugs(entry.replace(/\.pt-br(\.mdx?)$/, '$1')).join('/'));
+    }
+    for (const page of pages) {
+      const slugs = page ? page.split('/') : [];
+      for (const locale of i18n.languages) {
+        paths.push(getUrl(slugs, locale));
+        paths.push(getPageImageUrl({ slugs, locale }).url);
+      }
     }
 
     return paths;

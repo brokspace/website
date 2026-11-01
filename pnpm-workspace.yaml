@@ -1,2 +1,6 @@
+# Packages allowed to run install scripts: `onlyBuiltDependencies` for
+# pnpm 10 (what Hostinger's Node 22 corepack runs), `allowBuilds` for pnpm 11+.
+onlyBuiltDependencies:
+  - esbuild
 allowBuilds:
   esbuild: true
