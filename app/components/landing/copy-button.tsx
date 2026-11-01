@@ -1,8 +1,10 @@
 import { Check, Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { useMessages } from '@/lib/use-lang';
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
+  const m = useMessages().copy;
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -20,7 +22,7 @@ export function CopyButton({ text, className }: { text: string; className?: stri
           () => undefined,
         );
       }}
-      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+      aria-label={copied ? m.copied : m.copy}
       className={cn(
         'inline-flex size-8 shrink-0 items-center justify-center rounded-md text-mist transition-colors hover:bg-white/8 hover:text-snow focus-visible:outline-2 focus-visible:outline-forge',
         className,
@@ -28,7 +30,7 @@ export function CopyButton({ text, className }: { text: string; className?: stri
     >
       {copied ? <Check className="size-4 text-forge" /> : <Copy className="size-4" />}
       <span className="sr-only" aria-live="polite">
-        {copied ? 'Copied' : ''}
+        {copied ? m.copied : ''}
       </span>
     </button>
   );
