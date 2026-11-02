@@ -1,9 +1,8 @@
-import { ImageResponse } from 'takumi-js/response';
 import { langFromPath } from '@/lib/i18n';
 import { source } from '@/lib/source';
 import type { Route } from './+types/og.docs';
 
-export function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
   const slugs = params['*']
     .split('/')
     .filter((v) => v.length > 0)
@@ -12,11 +11,21 @@ export function loader({ params, request }: Route.LoaderArgs) {
 
   if (!page) throw new Response(undefined, { status: 404 });
 
-  return new ImageResponse(<Card title={page.data.title} description={page.data.description} />, {
-    width: 1200,
-    height: 630,
-    format: 'webp',
-  });
+  // takumi renders with a native binary that loads on first use: render the
+  // whole image here, so a host where it cannot load falls back to the
+  // site-wide card instead of failing mid-response.
+  try {
+    const { ImageResponse } = await import('takumi-js/response');
+    const image = new ImageResponse(<Card title={page.data.title} description={page.data.description} />, {
+      width: 1200,
+      height: 630,
+      format: 'webp',
+    });
+    return new Response(await image.arrayBuffer(), { headers: image.headers });
+  } catch (error) {
+    console.error('[og] takumi-js could not render; serving the site-wide card instead.', error);
+    return Response.redirect(new URL('/og-cover.png', request.url), 302);
+  }
 }
 
 function Card({ title, description }: { title: string; description?: string }) {
