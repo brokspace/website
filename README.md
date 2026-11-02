@@ -86,19 +86,23 @@ prerendered, so it stays fast).
    repository** and authorize GitHub. Pick `brokspace/website`, branch `main`.
 2. Check the build settings Hostinger detects, and set them to:
 
-   | Setting          | Value                                              |
-   | ---------------- | -------------------------------------------------- |
-   | Framework        | Other (or React Router, if listed)                 |
-   | Node.js version  | 22 or 24                                           |
-   | Root directory   | `/`                                                |
-   | Package manager  | pnpm (npm also works: it ignores `pnpm-lock.yaml`) |
-   | Build command    | `pnpm build` (`npm run build` with npm)            |
-   | Output directory | `build`                                            |
-   | Entry file       | `server.js`                                        |
+   | Setting          | Value                                       |
+   | ---------------- | ------------------------------------------- |
+   | Application type | `react-router`                              |
+   | Node.js version  | 22 or 24                                    |
+   | Root directory   | `/`                                         |
+   | Package manager  | pnpm                                        |
+   | Build script     | `build`                                     |
+   | Output directory | `build`                                     |
+   | Entry file       | `server.js` (relative to the root directory) |
+
+   **The entry file is required.** Without it Hostinger deploys React Router
+   as a static site with no server running: brokspace.org answers 403, and
+   search, the install scripts and the stars count stop working.
 
    `server.js` starts the same server as `pnpm start` on the port Hostinger
-   gives it (`PORT`). Hostinger may prefill **Output directory** `dist` and
-   no entry file: change them, the build writes to `build/`.
+   gives it (`PORT`). Hostinger may detect a Vite site and prefill
+   **Output directory** `dist` with no entry file: change both.
 
    If the build fails while prerendering (`Prerender: Request failed ...
    ECONNREFUSED`), add the build environment variable
