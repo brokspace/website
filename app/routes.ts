@@ -18,5 +18,6 @@ export default [
   route('llms.mdx/docs/*', 'llms/mdx.ts'),
   route('pt-br/llms.mdx/docs/*', 'llms/mdx.ts', { id: 'llms-mdx-pt-br' }),
 
+  route('404', 'routes/404.tsx'),
   route('*', 'routes/not-found.tsx'),
 ] satisfies RouteConfig;
