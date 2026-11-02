@@ -27,6 +27,12 @@ build().catch((error) => {
 import('@react-router/express').then(({ createRequestHandler }) => {
   const app = express();
   app.disable('x-powered-by');
+  // React Router builds each request's URL from the Host header (Express 5
+  // has no hostname without it): never let a proxy that drops it fail a page.
+  app.use((req, _res, next) => {
+    req.headers.host ??= 'brokspace.org';
+    next();
+  });
   app.use(compression());
   // Hashed build assets never change.
   app.use('/assets', express.static(join(client, 'assets'), { immutable: true, maxAge: '1y' }));
