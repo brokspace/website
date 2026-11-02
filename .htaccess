@@ -1,0 +1,78 @@
+# brokspace.org on Hostinger (LiteSpeed, Apache compatible). Vite copies this
+# file to build/client, which CI publishes to the `hostinger` branch and
+# Hostinger serves from public_html (README, Deploy): HTTPS and apex
+# redirects, directory indexes, the 404 page, the install script redirects,
+# Markdown for LLMs, security headers and caching.
+
+Options -Indexes -MultiViews
+DirectoryIndex index.html
+# Pages are prerendered as <route>/index.html. The /route -> /route/ redirect
+# is done below so it always points to https (DirectorySlash would use the
+# internal scheme behind Hostinger's TLS proxy).
+DirectorySlash Off
+ErrorDocument 404 /404/index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # HTTPS only (Hostinger terminates TLS in front of the site, so check the forwarded scheme too).
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+  # www.brokspace.org -> brokspace.org
+  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+  RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]
+
+  # brokspace.org/install.sh and /install.ps1: the install scripts from brokspace/brok main.
+  RewriteRule ^install\.(sh|ps1)$ https://raw.githubusercontent.com/brokspace/brok/main/scripts/install.$1 [R=302,L]
+
+  # /docs/<page>.md and /pt-br/docs/<page>.md: the page as Markdown.
+  RewriteRule ^(pt-br/)?docs/(.+)\.md$ /$1llms.mdx/docs/$2/content.md [L]
+  RewriteRule ^(pt-br/)?docs\.md$ /$1llms.mdx/docs/content.md [L]
+
+  # /route -> /route/ for prerendered directories.
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^(.*[^/])$ https://%{HTTP_HOST}/$1/ [R=301,L]
+
+  # Hashed build assets never change: cache them for a year.
+  RewriteRule ^assets/ - [E=BK_IMMUTABLE:1]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+
+  # Pages and data revalidate on every visit, so a deployment shows up at once.
+  Header set Cache-Control "public, max-age=0, must-revalidate"
+  Header set Cache-Control "public, max-age=31536000, immutable" env=BK_IMMUTABLE
+  # Fonts, images and OG cards keep their names across deployments: a day.
+  <FilesMatch "\.(woff2?|png|svg|ico|webp)$">
+    Header set Cache-Control "public, max-age=86400"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_mime.c>
+  AddType application/manifest+json .webmanifest
+  # React Router's client navigation data.
+  AddType text/x-script .data
+  AddType text/markdown .md
+  AddType text/plain .txt
+</IfModule>
+
+# The search index has no extension.
+<Files "search">
+  ForceType application/json
+</Files>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/plain text/markdown text/x-script text/xml application/javascript application/json application/xml image/svg+xml
+</IfModule>
+
+# Nothing in the deploy branch except the site should be served.
+<FilesMatch "^(\.git.*|DEPLOY\.md)$">
+  Require all denied
+</FilesMatch>

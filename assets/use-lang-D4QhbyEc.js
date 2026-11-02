@@ -1,0 +1,1 @@
+import{M as e}from"./components-DESw0azb.js";import{b as t,h as n}from"./logo-CIuk85-6.js";function r(){return t(e().pathname)}function i(){return n(r())}export{i as n,r as t};

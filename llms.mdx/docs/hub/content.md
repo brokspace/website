@@ -1,0 +1,19 @@
+# Shard Hub (preview) (/docs/hub)
+
+<Callout title="Coming soon">
+  The Hub is being built. Until it opens, install shards from any git
+  repository with `brok shard install <url>`.
+</Callout>
+
+The Brokspace Hub will be the official catalog of shards built by the
+Brokspace team, and later a registry anyone can publish to, in the spirit of
+Docker Hub:
+
+- **Official shards and skill packs**, reviewed and versioned.
+- **One-command install** from the CLI and from the Brokspace IDE.
+- **Permissions up front:** every shard lists what it may read, write, run
+  and reach, before you install it.
+
+Today, build your own with [Shards](/docs/shards) and
+[Skills](/docs/skills), and start from the
+[shard template](https://github.com/brokspace/brok-shard-template).

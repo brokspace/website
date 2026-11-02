@@ -1,0 +1,2670 @@
+# Architecture (/docs/architecture)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/architecture.md by scripts/sync-docs.mjs. Edit it there. -->
+
+This document explains how the pieces of Brokspace fit together. It is aimed
+at contributors and shard authors.
+
+## Crates and repositories [#crates-and-repositories]
+
+```text
+brok-sdk  (own repo, crates.io)   protocol · manifest · transport · client
+   ▲
+   ├── brok-core      workspace discovery, .brokspace/ layout, brok.yml, partitions, git
+   ├── brok-bus       event bus: listener, sessions, router actor, token auth / ACL
+   ├── brok-index     chunking, Arrow schema, BM25, stores, embeddings, search, index service
+   ├── brok-shard     registry, installer, sandbox environment, supervisor
+   └── brok-cli       the `brok` binary: one module per subcommand
+brok-agent (own repo)            default system shard, depends only on brok-sdk
+```
+
+Rules of thumb: library crates use `thiserror`/`anyhow::Result` with context
+and never print; only `brok-cli` talks to the terminal. Optional native
+backends are cargo features, so the pure-Rust build always works.
+
+## Workspace layout [#workspace-layout]
+
+```text
+<workspace>/.brokspace/
+├── brok.yml                configuration
+├── .gitignore              runtime state is never committed by accident
+├── cache/models/           ONNX weights + tokenizer
+├── databases/
+│   ├── .lock               exclusive writer lock (brok index / brok run)
+│   ├── cold/               root repository partition
+│   └── hot/<submodule-id>/ one micro-database per git submodule
+│       ├── files.json      manifest: path → sha256, size, mtime, chunk count
+│       ├── bm25.bin        BM25 index (postcard)
+│       └── chunks.lance/ | CURRENT + chunks-NNNNNNNN.arrow
+├── shards/
+│   ├── shards.lock         provenance + binary sha256 of every shard
+│   └── <name>/{shard.json, bin/…}
+├── run/                    operator.token (0600), brok.pid, brok.sock (Unix)
+└── logs/<shard>.log
+```
+
+## Indexing pipeline [#indexing-pipeline]
+
+1. **Walk** with the `ignore` crate (nested `.gitignore`s, global excludes),
+   then apply `index.include` / `index.exclude`.
+2. **Route** each file to the deepest partition containing it
+   (`PartitionMap::resolve`).
+3. **Skip unchanged files** cheaply: same size and mtime as in `files.json` →
+   untouched; otherwise hash the content and compare.
+4. **Chunk** in parallel (rayon). The AST chunker emits one chunk per
+   definition, attaches doc comments/attributes/decorators, splits large
+   containers into a header plus members (`parent` = the container) and
+   groups loose top-level code into `preamble` chunks.
+5. **Embed** in batches on a blocking thread (`spawn_blocking`), prefixing
+   `search_document:` as nomic models expect; mean pooling → layer norm →
+   Matryoshka truncation → L2 normalization.
+6. **Write**: delete the file's previous chunks, append the new ones, update
+   BM25 and the manifest, then commit atomically. Files are processed in
+   batches of 512 so memory stays bounded on large repositories.
+
+`brok index` and `brok run` take an exclusive OS file lock on
+`databases/.lock`; readers (`brok search`, `brok status`) never block.
+
+### Stores [#stores]
+
+Both stores share one Arrow schema (`brok-index/src/schema.rs`): `id`, `path`,
+`language`, `kind`, `symbol`, `parent`, `signature`, line and byte ranges,
+`file_hash`, `content` and an optional `FixedSizeList<Float32>` `vector`.
+
+- **LanceDB**: deletes/appends go straight to the table; compaction runs every
+  16 writes and an ANN index is built past 10 000 rows.
+- **Arrow IPC**: each commit writes a new immutable generation file and flips
+  `CURRENT`. Files are memory-mapped and decoded zero-copy; immutability is
+  what makes `mmap` sound and lets readers keep an old generation (Windows
+  cannot replace a mapped file). Vector search is exact (dot product over
+  normalized vectors).
+
+## Search [#search]
+
+For each partition: BM25 top-k and vector top-k (when the partition has
+vectors of the right size) → Reciprocal Rank Fusion (`k = 60`), normalized so
+that rank 1 in every list scores 1.0. Partitions other than the focus (the
+partition of the current directory) are multiplied by `search.cold_weight`.
+The final top-k chunk ids are materialized from their stores.
+
+## Event bus [#event-bus]
+
+- **Transport**: Unix domain socket at `.brokspace/run/brok.sock` (falls back
+  to `$XDG_RUNTIME_DIR` for long paths) or the named pipe
+  `\\.\pipe\brok-<hash of the workspace path>`. Frames are a 4-byte big-endian
+  length plus JSON, capped at 16 MiB.
+- **Handshake**: `Hello{protocol, name, version, token}` → `Welcome{session,
+  identity, context}` or `Error`. Tokens are 256-bit random, stored hashed.
+- **Router**: a single actor task owns all state, so routing is lock-free.
+  Delivery uses bounded queues and `try_send`: a slow client loses events (and
+  is logged) rather than stalling everyone.
+- **Semantics**: topic patterns (`file:*`), `source` stamped by the bus,
+  `system:*` reserved and broadcast, request/reply via `correlation_id` routed
+  only to the requester (a bounded table with a 15 minute TTL).
+
+### Built-in participants [#built-in-participants]
+
+| Participant                                 | Identity            | Publishes            | Subscribes                     |
+| ------------------------------------------- | ------------------- | -------------------- | ------------------------------ |
+| CLI (`brok ask`, `brok bus`, `brok search`) | `operator`          | any non-system topic | `*`                            |
+| Index service                               | `brok-index`        | `index:*`            | `file:changed`, `index:search` |
+| Shards                                      | their manifest name | `publishes_to`       | `subscribes_to`                |
+
+### Well-known topics [#well-known-topics]
+
+| Topic                                  | Payload                                | Direction                  |
+| -------------------------------------- | -------------------------------------- | -------------------------- |
+| `file:changed`                         | `{changed: [path], deleted: [path]}`   | agent → index (and anyone) |
+| `index:search` / `index:search.result` | `SearchRequest` / `SearchResults`      | request/reply              |
+| `index:updated`                        | counts and duration                    | index → anyone             |
+| `agent:ask`                            | `{prompt, provider?, context_chunks?}` | CLI → agent                |
+| `agent:ask.chunk` / `.done` / `.error` | streamed reply                         | agent → requester          |
+| `review:result`                        | `{path, verdict, summary}`             | agent → anyone             |
+| `system:shutdown`                      | `{reason}`                             | runtime → everyone         |
+
+Types live in `brok_sdk::payload`.
+
+## Daemon lifecycle [#daemon-lifecycle]
+
+`brok run` is the daemon in the foreground; `brok start` launches the same
+process detached (output in `.brokspace/logs/brok.log`), and `brok ask`,
+`chat`, `review`, `commit` and `skill run` start it on demand. Readiness means
+the bus is listening and, when installed, `brok-agent` is connected; the CLI
+checks it with a `daemon:status` request.
+
+Start: bind the bus → issue the operator token (`run/operator.token`) → start
+the control service (`daemon:status`, `daemon:stop`) → open the index for
+writing (falls back to read-only search if the model or lock is unavailable),
+catch up on changes made while stopped, and connect the index service → for
+each enabled shard, issue a token from its manifest, build its sandbox
+environment and supervise it.
+
+Stop (Ctrl+C, or `brok stop` publishing `daemon:stop`): broadcast
+`system:shutdown` → shards get 3 seconds to exit, then are killed → index
+service stops → bus stops → runtime files removed.
+
+Freshness: `brok-agent` reports dirty files every few seconds and, when a
+repository's `HEAD` moves (commit, pull, checkout), the files that differ
+between the two commits; root, submodules and nested repositories alike.
+
+Crashing shards restart with exponential backoff (1 s … 30 s); five crashes
+within a minute and the supervisor gives up.
+
+## Memory profile [#memory-profile]
+
+- Text-only search (embeddings disabled or model missing): BM25 postings in
+  memory plus memory-mapped chunk data; typically a few tens of MB.
+- Semantic search loads the quantized model (~140 MB of weights) once per
+  process. Run `brok run` and searches reuse its already-loaded model through
+  the bus instead of loading their own.
+- Indexing streams files in batches; the Arrow store keeps staged batches in
+  memory until commit, LanceDB writes per batch.
+
+
+# Configuration reference (/docs/configuration)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/configuration.md by scripts/sync-docs.mjs. Edit it there. -->
+
+`brok init` writes `.brokspace/brok.yml` with comments (commands that change
+the file, like `brok setup llm`, keep them; comments you add yourself are
+dropped when brok rewrites the file). Every key is optional;
+missing keys take the defaults below. Unknown keys are rejected with a
+"did you mean" style error, so typos never go unnoticed.
+
+Changes take effect on the next command (or after restarting `brok run`).
+Changing `embeddings.model`, `embeddings.dimensions` or `index.store`
+triggers a rebuild of the affected partitions on the next `brok index`.
+
+## `workspace` [#workspace]
+
+| Key          | Default | Description                                                                                                                                 |
+| ------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submodules` | `true`  | Index git submodules and git repositories nested in the workspace (up to 4 levels, e.g. a folder of repos) as independent _hot_ partitions. |
+
+## `index` [#index]
+
+| Key               | Default                                                                                                                                                                    | Description                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `include`         | `["**/*"]`                                                                                                                                                                 | Globs (relative to the workspace root) of files to index.                                               |
+| `exclude`         | `.git`, `.brokspace`, `target`, `node_modules`, `dist`, `build`, lock files (`*.lock`, `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `go.sum`), `*.min.js` | Globs to skip. `.gitignore` files are always honored on top of this.                                    |
+| `max_file_kb`     | `512`                                                                                                                                                                      | Larger files are skipped. Binary files (NUL bytes) and non UTF-8 files are always skipped.              |
+| `max_chunk_lines` | `120`                                                                                                                                                                      | A syntactic unit longer than this is split: containers into members, other nodes at line boundaries.    |
+| `store`           | `auto`                                                                                                                                                                     | `auto` (LanceDB when compiled in), `lancedb` or `arrow` (memory-mapped Arrow IPC, exact vector search). |
+
+## `embeddings` [#embeddings]
+
+| Key          | Default                 | Description                                                                                |
+| ------------ | ----------------------- | ------------------------------------------------------------------------------------------ |
+| `enabled`    | `true`                  | `false` runs on BM25 text search only: no download, minimal memory.                        |
+| `model`      | `nomic-embed-text-v1.5` | The only supported model today.                                                            |
+| `variant`    | `quantized`             | `quantized` (~140 MB, int8) or `full` (~550 MB, fp32).                                     |
+| `dimensions` | `768`                   | Matryoshka truncation: `64`, `128`, `256`, `512` or `768`.                                 |
+| `device`     | `auto`                  | `auto`, `cpu`, `cuda`, `coreml`, `directml` (GPU devices need the matching build feature). |
+| `batch_size` | `16`                    | Texts per inference batch.                                                                 |
+
+Model files are downloaded once per user and shared by every workspace:
+`~/.cache/brokspace/models` (Linux), `~/Library/Caches/brokspace/models`
+(macOS), `%LOCALAPPDATA%\brokspace\models` (Windows). Set `BROK_MODELS_DIR`
+to use another directory. A copy inside `.brokspace/cache/models/` (from
+older versions) keeps working.
+
+## User defaults [#user-defaults]
+
+`brok setup llm` also stores your LLM choice in the user configuration
+(`~/.config/brokspace/config.yml`, `~/Library/Application Support/brokspace/`
+or `%APPDATA%\brokspace\`; override with `BROK_CONFIG_DIR`). `brok init`
+applies it to every new workspace, so you choose a model once per machine.
+
+## `search` [#search]
+
+| Key           | Default | Description                                                                  |
+| ------------- | ------- | ---------------------------------------------------------------------------- |
+| `limit`       | `8`     | Default number of results.                                                   |
+| `cold_weight` | `0.85`  | Score multiplier for partitions other than the one you run the command from. |
+
+## `llm` [#llm]
+
+OpenAI-compatible chat completion endpoints used by `brok-agent`.
+
+```yaml
+llm:
+  default: ollama
+  providers:
+    ollama: { base_url: http://localhost:11434/v1, model: qwen2.5-coder:7b }
+    lmstudio: { base_url: http://localhost:1234/v1, model: qwen2.5-coder-7b-instruct }
+    anthropic:
+      base_url: https://api.anthropic.com/v1
+      model: claude-sonnet-5-5
+      api_key_env: ANTHROPIC_API_KEY
+      max_tokens: 2048
+```
+
+| Key                                           | Description                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `default`                                     | Provider used unless `brok ask --provider` says otherwise. Must exist in `providers`. |
+| `providers.<name>.base_url`                   | URL up to and including `/v1`.                                                        |
+| `providers.<name>.model`                      | Model name as the provider expects it.                                                |
+| `providers.<name>.api_key_env`                | **Name** of the environment variable holding the key. Keys never go in this file.     |
+| `providers.<name>.temperature` / `max_tokens` | Optional sampling settings.                                                           |
+
+## `sync` [#sync]
+
+Where the index is mirrored, configured with `brok setup sync`.
+
+| Key                                                | Description                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `backend`                                          | `none`, `s3`, `r2`, `minio` or `git-lfs`.                                                               |
+| `remote.bucket` / `prefix` / `region` / `endpoint` | Object storage coordinates.                                                                             |
+| `remote.access_key_env` / `secret_key_env`         | Names of the variables holding the credentials (default `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). |
+
+`git-lfs` tracks `.brokspace/databases/**` with Git LFS and stops ignoring it,
+so the index travels with the repository. The object storage sync engine
+(`brok sync`) is on the roadmap: today `brok setup sync` records the target.
+
+## `shards` [#shards]
+
+```yaml
+shards:
+  brok-agent:
+    enabled: true # brok run starts it (shards not listed are enabled)
+    settings: # free-form, handed to the shard when it connects
+      watch_interval_secs: 5
+```
+
+Each shard documents its own `settings`. For `brok-agent` see its
+[README](https://github.com/brokspace/brok-agent#settings).
+
+## Environment variables [#environment-variables]
+
+| Variable          | Used by | Purpose                                                     |
+| ----------------- | ------- | ----------------------------------------------------------- |
+| `RUST_LOG`        | all     | Log filter, e.g. `RUST_LOG=brok_index=debug`.               |
+| `NO_COLOR`        | CLI     | Disable colors.                                             |
+| `BROK_MODELS_DIR` | CLI     | Embedding model cache (default: the OS cache directory).    |
+| `BROK_CONFIG_DIR` | CLI     | User defaults directory (default: the OS config directory). |
+| `BROK_*` (others) | shards  | Set by `brok run` for shard processes; reserved.            |
+
+
+# Getting started with Brokspace (/docs/getting-started)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/getting-started.md by scripts/sync-docs.mjs. Edit it there. -->
+
+From zero to a productive workspace in about 15 minutes. Each step is short;
+skip what you do not need.
+
+1. [Install brok](#1-install-brok)
+2. [Get a local LLM (optional)](#2-get-a-local-llm-optional)
+3. [Set up your first workspace](#3-set-up-your-first-workspace)
+4. [Use it every day](#4-use-it-every-day)
+5. [Connect your coding agent](#5-connect-your-coding-agent)
+6. [Configure](#6-configure)
+7. [Skills](#7-skills)
+8. [Shards](#8-shards)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Update brok](#10-update-brok)
+11. [Uninstall](#11-uninstall)
+
+---
+
+## 1. Install brok [#1-install-brok]
+
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/brokspace/brok/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/brokspace/brok/main/scripts/install.ps1 | iex
+```
+
+Both install two programs, `brok` and `brok-agent`, and check their
+checksums. Open a new terminal and check:
+
+```sh
+brok --version
+```
+
+**Company laptop blocks the script?** Download `brok-windows-x86_64.exe`
+from the [brok release](https://github.com/brokspace/brok/releases/latest)
+and `brok-agent-windows-x86_64.exe` from the
+[agent release](https://github.com/brokspace/brok-agent/releases/latest),
+rename them `brok.exe` and `brok-agent.exe`, put both in one folder and add
+that folder to your `PATH`.
+
+**Prefer Cargo?** `cargo install brok-cli brok-agent` (needs a C compiler and
+`protoc`), or `cargo install brok-cli brok-agent --no-default-features` for a
+lighter build with text search only.
+
+---
+
+## 2. Get a local LLM (optional) [#2-get-a-local-llm-optional]
+
+Search works without any LLM. Answers (`brok ask`, `chat`, `review`,
+`commit`) need one. A local model is free, private and works offline.
+
+**Ollama** (recommended):
+
+| OS      | Install                                          |
+| ------- | ------------------------------------------------ |
+| Windows | `winget install Ollama.Ollama`                   |
+| macOS   | `brew install ollama`                            |
+| Linux   | `curl -fsSL https://ollama.com/install.sh \| sh` |
+
+Pick the model for your machine:
+
+| Your machine                                                   | Model                | Download                         |
+| -------------------------------------------------------------- | -------------------- | -------------------------------- |
+| 8 GB                                                           | `qwen2.5-coder:1.5b` | `ollama pull qwen2.5-coder:1.5b` |
+| 16 GB, no GPU (most business laptops)                          | `qwen2.5-coder:3b`   | `ollama pull qwen2.5-coder:3b`   |
+| 16 GB with a GPU (6 GB+) or Apple Silicon; 32 GB without a GPU | `qwen2.5-coder:7b`   | `ollama pull qwen2.5-coder:7b`   |
+| A GPU with 12 GB+, or 32 GB with a GPU or Apple Silicon        | `qwen2.5-coder:14b`  | `ollama pull qwen2.5-coder:14b`  |
+
+Not sure? Skip the pull: `brok init` (next step) measures your machine and
+offers to download the right one.
+
+Small models (1.5b, 3b) are fine for questions (`ask`, `chat`); reviews and
+commit messages are much better with 7b or larger. Without a GPU, a 7b
+model takes a few minutes per review, which is why the table suggests 3b
+there.
+
+Prefer a graphical app? [LM Studio](https://lmstudio.ai) works too: download a
+model, open **Developer / Local Server** and press **Start Server**. More in
+[Local LLM setup](/docs/local-llm).
+
+---
+
+## 3. Set up your first workspace [#3-set-up-your-first-workspace]
+
+Go to your project (one repository, or a folder holding several) and run
+(want a sample project first? clone
+[example-nestjs](https://github.com/brokspace/example-nestjs)):
+
+```sh
+cd ~/code/my-project
+brok init
+```
+
+It walks through six steps and asks before anything big:
+
+| Step               | What happens                                                               |
+| ------------------ | -------------------------------------------------------------------------- |
+| 1. Workspace       | Creates `.brokspace/` with a commented `brok.yml`                          |
+| 2. Agent           | Installs `brok-agent`, the helper that tracks changes and talks to the LLM |
+| 3. Semantic search | Downloads the search model once (~140 MB, shared by all your projects)     |
+| 4. Local LLM       | Finds Ollama / LM Studio and picks a model that fits your machine          |
+| 5. Index           | Indexes your code (functions, classes and sections, not raw text)          |
+| 6. Coding agents   | Connects Claude Code, Cursor, VS Code or Codex (skills + search tool)      |
+
+Want no questions? `brok init --yes` accepts every recommendation.
+Then check the result:
+
+```sh
+brok doctor
+```
+
+Every line is either ✓, or a `!` with the exact command that fixes it.
+
+> Your next project is faster: the search model and your LLM choice are
+> remembered, so `brok init` there takes seconds.
+
+---
+
+## 4. Use it every day [#4-use-it-every-day]
+
+```sh
+brok search "where do we validate tokens"     # find code by meaning or by name
+brok ask "how does the refresh flow work?"    # an answer from your LLM, with sources
+brok chat                                     # a conversation with follow-up questions
+brok review                                   # AI review of your uncommitted changes
+git add -p && brok commit                     # commit message written from the staged diff
+```
+
+The first `ask`, `chat`, `review` or `commit` starts brok in the background.
+From then on the index follows you: saved files, commits, pulls and branch
+switches are picked up within seconds.
+
+| You want to...                          | Run                                                               |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| Start / stop the background service     | `brok start` / `brok stop`                                        |
+| Restart it after editing `brok.yml`     | `brok restart`                                                    |
+| See what it is doing                    | `brok logs -f`                                                    |
+| See what is indexed                     | `brok status`                                                     |
+| Review only staged changes, or a branch | `brok review --staged` / `brok review --base main`                |
+| Just print a commit message             | `brok commit --print`                                             |
+| Use a different model for one question  | `brok ask -p anthropic "..."`                                     |
+| Show whole results, or JSON for scripts | `brok search "..." --full` / `--json`                             |
+| Rebuild the index from scratch          | `brok index --rebuild`                                            |
+| Tab completion                          | `brok completions bash >> ~/.bashrc` (also zsh, fish, powershell) |
+
+**About AI reviews.** With a local 7b model, `brok review` is a quick first
+pass: it catches slips you would rather not push, but it also gets things
+wrong (we have seen it invent a missing validation). Read its findings as
+questions, not verdicts. For a review you want to rely on, use a 14b model
+or a hosted one for that run: `brok review -p anthropic` (see
+[Configure](#6-configure) for API keys).
+
+Inside `brok chat`: `/skill grill-me` applies a skill to the conversation,
+`/clear` forgets it, `/exit` leaves.
+
+---
+
+## 5. Connect your coding agent [#5-connect-your-coding-agent]
+
+If you skipped step 6 of `brok init`:
+
+```sh
+brok setup agents
+```
+
+It detects your agents and, for each one, adds:
+
+- a **search tool** (`brok_search`) through MCP, so the agent finds code by
+  meaning before grepping;
+- the **built-in skills**, such as `/ask-brok`, `/grill-me`, `/to-spec`,
+  `tdd` and `code-review`.
+
+| Agent             | Files written                                                       |
+| ----------------- | ------------------------------------------------------------------- |
+| Claude Code       | `.mcp.json`, `.claude/skills/`                                      |
+| Cursor            | `.cursor/mcp.json`, `.agents/skills/`                               |
+| VS Code / Copilot | `.vscode/mcp.json`, `.agents/skills/`                               |
+| Codex             | `.agents/skills/` (prints the MCP lines for `~/.codex/config.toml`) |
+
+Commit these files and your whole team gets the same setup. In your agent,
+start with `/ask-brok` and describe what you want to do.
+
+---
+
+## 6. Configure [#6-configure]
+
+Everything lives in **`.brokspace/brok.yml`**. Every key is optional and the
+defaults are sensible. The settings people change most:
+
+```yaml
+llm:
+  default: ollama # which provider `brok ask` uses
+  providers:
+    ollama:
+      base_url: http://localhost:11434/v1
+      model: qwen2.5-coder:7b
+    anthropic: # hosted models: the key comes from an env var
+      base_url: https://api.anthropic.com/v1
+      model: claude-sonnet-5-5
+      api_key_env: ANTHROPIC_API_KEY
+
+embeddings:
+  enabled: true # false = text search only, less memory
+
+index:
+  exclude: # .gitignore is always respected too
+    - "**/node_modules/**"
+    - "**/*.min.js"
+    - "docs/archive/**"
+
+shards:
+  brok-agent:
+    settings:
+      review: # optional AI review of matching files on change
+        enabled: false
+        include: ["src/api/**"]
+```
+
+Easier ways to change things:
+
+| Change                                   | Command                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| Switch the local LLM or model            | `brok setup llm` (or `brok setup llm --provider ollama --model llama3:8b`) |
+| Connect more coding agents               | `brok setup agents`                                                        |
+| Share the index (Git LFS, S3, R2, MinIO) | `brok setup sync`                                                          |
+
+After editing `brok.yml`, run `brok restart`. Every key is explained in
+[Configuration reference](/docs/configuration).
+
+**API keys** are never written to files: export them in your shell
+(`export ANTHROPIC_API_KEY=...`, or `$env:ANTHROPIC_API_KEY = "..."` in
+PowerShell) and Brokspace reads them when needed. Secrets found in your code
+are removed from the context before anything is sent to an LLM.
+
+---
+
+## 7. Skills [#7-skills]
+
+A skill is a small, reusable workflow for AI: a `SKILL.md` file with
+instructions. Brokspace ships 20 of them.
+
+```sh
+brok skill list                                    # what is available
+brok skill show tdd                                # read one
+brok skill run code-review "the session handling"  # run one on your local LLM
+```
+
+**User-invoked** skills are started by you (type `/name` in your agent, e.g.
+`/grill-me` before a big change). **Model-invoked** skills are picked by the
+agent when the task fits (e.g. `tdd`, `code-review`).
+
+Write your own:
+
+```sh
+brok skill new release-notes          # creates .brokspace/skills/release-notes/SKILL.md
+brok skill export                     # refresh your coding agents with it
+```
+
+A workspace skill with the same name as a built-in one replaces it, so you
+can tailor any built-in to your team. More in [Skills](/docs/skills).
+
+---
+
+## 8. Shards [#8-shards]
+
+Shards are small programs that react to what happens in your workspace (a
+file changed, a question was asked) and can publish their own events. The
+agent you installed is one.
+
+```sh
+brok shard list                                             # what is installed
+brok shard install https://github.com/someone/some-shard    # shows its permissions before installing
+brok shard new my-shard                                     # start your own (Rust project)
+brok shard new my-skills --skills-only                      # or just share skills, no code
+brok restart                                                # start new shards
+brok bus tail                                               # watch events live while developing
+```
+
+Every shard lists the permissions it wants in `shard.json`, and you approve
+them when installing. Guide: [Shards](/docs/shards).
+
+---
+
+## 9. Troubleshooting [#9-troubleshooting]
+
+Start with `brok doctor`: it checks everything and prints the fix.
+
+| Symptom                                     | Fix                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no answer from the agent`                  | Start your LLM (open Ollama / LM Studio), then `brok doctor`                                                                                                                                                                        |
+| `ollama ... is not installed`               | `ollama pull <model>` as shown by `brok doctor`                                                                                                                                                                                     |
+| Answers take minutes                        | The model runs on your CPU. Normal for 7b on a laptop without a GPU (a review can take 3 to 5 minutes); for faster answers use 3b: `ollama pull qwen2.5-coder:3b`, then `brok setup llm --provider ollama --model qwen2.5-coder:3b` |
+| Search misses recent code                   | `brok status`; if the daemon is stopped, `brok start` catches up                                                                                                                                                                    |
+| `another brok process is writing the index` | `brok` is running in the background and already indexes for you; skip `brok index`, or `brok stop` first                                                                                                                            |
+| Results come back as text only              | The search model is missing: `brok model download`                                                                                                                                                                                  |
+| Agent does not show the brok tools          | `brok` must be on `PATH`; run `brok setup agents` and restart the agent                                                                                                                                                             |
+| Odd behavior after an upgrade               | `brok restart`; if it persists, `brok index --rebuild`                                                                                                                                                                              |
+| Windows: errors about long paths            | Enable long paths (`brok doctor` shows the command) or use a shorter folder                                                                                                                                                         |
+
+Still stuck? Run `brok logs -n 100` and ask in
+[Discussions](https://github.com/brokspace/brok/discussions), including the
+output of `brok doctor`.
+
+---
+
+## 10. Update brok [#10-update-brok]
+
+```sh
+brok upgrade --check    # is there a new version, and what changed?
+brok upgrade            # shows what changed, asks, then upgrades
+```
+
+`brok upgrade` downloads the new `brok` and `brok-agent`, checks them
+against the release checksums, swaps them in and restarts brok in every
+workspace where it was running (each workspace's agent is refreshed on
+that restart). `brok doctor` tells you when a new version is out.
+
+Then run `brok skill export` in your workspaces so your coding agents get
+the updated built-in skills.
+
+Installed with Cargo? Upgrade with `cargo install brok-cli brok-agent`.
+Coming from brok 0.2.1 or older (no `upgrade` command yet)? Run the install
+command from [step 1](#1-install-brok) again, once.
+
+---
+
+## 11. Uninstall [#11-uninstall]
+
+```sh
+brok stop                    # in each workspace where it runs
+```
+
+Then delete:
+
+- the `.brokspace/` folder of each workspace (plus `.agents/skills`,
+  `.claude/skills` and the MCP files if you no longer want them);
+- the shared model cache: `~/.cache/brokspace` (Linux),
+  `~/Library/Caches/brokspace` (macOS), `%LOCALAPPDATA%\brokspace` (Windows);
+- your defaults: `~/.config/brokspace` (Linux),
+  `~/Library/Application Support/brokspace` (macOS), `%APPDATA%\brokspace`
+  (Windows);
+- the `brok` and `brok-agent` programs (`~/.local/bin`, or
+  `%LOCALAPPDATA%\Programs\brok` on Windows; `cargo uninstall brok-cli brok-agent`
+  if you used Cargo).
+
+
+# Shard Hub (preview) (/docs/hub)
+
+<Callout title="Coming soon">
+  The Hub is being built. Until it opens, install shards from any git
+  repository with `brok shard install <url>`.
+</Callout>
+
+The Brokspace Hub will be the official catalog of shards built by the
+Brokspace team, and later a registry anyone can publish to, in the spirit of
+Docker Hub:
+
+- **Official shards and skill packs**, reviewed and versioned.
+- **One-command install** from the CLI and from the Brokspace IDE.
+- **Permissions up front:** every shard lists what it may read, write, run
+  and reach, before you install it.
+
+Today, build your own with [Shards](/docs/shards) and
+[Skills](/docs/skills), and start from the
+[shard template](https://github.com/brokspace/brok-shard-template).
+
+
+# Brokspace IDE (/docs/ide)
+
+Brokspace IDE is built on [Eclipse Theia](https://theia-ide.org), so VS
+Code extensions from [Open VSX](https://open-vsx.org) work in it. It ships
+with `brok` and `brok-agent`, and puts them on your `PATH`.
+
+![Brokspace IDE home](/images/ide-home.png)
+
+## Install [#install]
+
+<Tabs items={['macOS', 'Debian / Ubuntu', 'Linux (other)', 'Windows']}>
+  <Tab value="macOS">
+    ```sh
+    brew install --cask brokspace/tap/brokspace-ide
+    ```
+    The first launch needs right click > **Open** while the app is not
+    notarized yet.
+  </Tab>
+  <Tab value="Debian / Ubuntu">
+    ```sh
+    curl -fsSL https://brokspace.github.io/apt/brokspace-archive-keyring.gpg \
+      | sudo tee /usr/share/keyrings/brokspace-archive-keyring.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/brokspace-archive-keyring.gpg] https://brokspace.github.io/apt stable main" \
+      | sudo tee /etc/apt/sources.list.d/brokspace.list
+    sudo apt update && sudo apt install brokspace-ide
+    ```
+  </Tab>
+  <Tab value="Linux (other)">
+    Download the AppImage or the `.tar.gz` from the
+    [latest release](https://github.com/brokspace/ide/releases/latest).
+  </Tab>
+  <Tab value="Windows">
+    Download `BrokspaceIDE-<version>-windows-x64-setup.exe` from the
+    [latest release](https://github.com/brokspace/ide/releases/latest). Choose
+    **More info > Run anyway** in SmartScreen while the installer is not
+    signed yet.
+  </Tab>
+</Tabs>
+
+The IDE updates itself from GitHub Releases. For answers you need an LLM:
+see [Local LLM setup](/docs/local-llm) (search works without one).
+
+## Your first minutes [#your-first-minutes]
+
+The window starts minimal: Explorer, Search, Source Control and Brokspace on
+the left, the **Brokspace agent** docked on the right. Debug, Testing and
+Extensions stay one shortcut away.
+
+1. **Open a folder** (File > Open Folder). If it has no Brokspace workspace
+   yet, the Brokspace view offers **Set Up Workspace**: it runs `brok init`
+   for you.
+2. **Ask.** Type a question on the home page or in the agent panel: the
+   Brokspace agent answers from your LLM with the sources it used; click a
+   source to open the file at that line. Follow-up questions keep the
+   conversation. Press `Ctrl+Shift+A` (`Cmd+Shift+A` on macOS) for **agent
+   focus mode**, where the agent takes most of the window.
+3. **Search.** The Brokspace view (the folded "B" in the activity bar) finds
+   code by meaning or by name; click a result to open it.
+4. **Review and commit.** Type `/review` in the chat (or `/review staged`,
+   `/review base main`). In Source Control, the ✨ button writes the commit
+   message from the staged changes.
+
+## The Brokspace view [#the-brokspace-view]
+
+| Section | What it shows |
+|---|---|
+| **Overview** | Whether Brokspace is running, the model, the index, search, and Ask / Review / Commit |
+| **Shards** | Each installed shard and its state; expand one to see what it reads and writes, whether it uses the network, the programs it runs, the events it listens to and publishes, and where it came from. Install, create or remove shards from the toolbar |
+| **Skills** | Workflows you run and the skills your agents use; click to run one |
+
+## The Brokspace agent [#the-brokspace-agent]
+
+Every request goes through `brok`, which sends it to the LLM set in
+`.brokspace/brok.yml` (Ollama, LM Studio or a hosted OpenAI-compatible API).
+Without an LLM, or when it does not answer, the agent replies with what the
+local index found, as links.
+
+| Type | It runs |
+|---|---|
+| A question | `brok ask` with the conversation so far |
+| `/review` | A review of your uncommitted changes |
+| `/review staged` | A review of the staged changes |
+| `/review base <ref>` | A review of this branch against `<ref>` |
+| `/skill <name> <input>` | A skill on your LLM, e.g. `/skill tdd add a priority field` |
+
+## Commands and languages [#commands-and-languages]
+
+Everything is also in the **Brokspace** menu and the command palette:
+Set Up Workspace, Start / Stop / Restart, Rebuild Index, Doctor, Install,
+Create and Remove Shard, Export Skills to Coding Agents, Run Skill, Review,
+Write Commit Message. The status bar shows whether Brokspace is running and
+which model it uses.
+
+The IDE is in English and Brazilian Portuguese. It starts in Portuguese on a
+Portuguese system; switch with **Language** on the home page.
+
+## How it works [#how-it-works]
+
+The IDE talks to Brokspace only through the `brok` CLI and its JSON output
+(see [Integrations](/docs/integrations)), so it shows exactly what `brok`
+sees, and anything it does you can also do in a terminal. It needs brok
+0.2.4 or newer; the one it ships with qualifies.
+
+
+# Introduction (/docs)
+
+Brokspace (`brok`) indexes your code (one repository, its submodules, or a
+whole folder of repositories) into a local hybrid search engine, connects it
+to the LLM you choose, and plugs it into the coding agents you already use.
+Nothing leaves your machine unless you choose a hosted model.
+
+## Two ways to use it [#two-ways-to-use-it]
+
+<Cards>
+  <Card title="CLI mode: brok" href="/docs/getting-started">
+    In any terminal and any editor. `brok search`, `ask`, `chat`, `review`,
+    `commit`, skills and shards. Your coding agents get the `brok_search`
+    tool through MCP.
+  </Card>
+  <Card title="IDE mode: Brokspace IDE" href="/docs/ide">
+    The same workspace in an IDE built around it: a home page that starts
+    with your question, the Brokspace agent in the chat, search, reviews and
+    commit messages one click away.
+  </Card>
+</Cards>
+
+Both share the same `.brokspace/` folder, so you can switch at any time.
+
+## What you get [#what-you-get]
+
+- **Search that understands code.** Functions, classes and sections are
+  indexed whole, found by meaning or by name, across every repository.
+- **Answers with sources.** Ask your own LLM (Ollama, LM Studio, or a hosted
+  model) about the workspace; every answer lists the code it used.
+- **Reviews and commit messages** from your staged or uncommitted changes.
+- **Skills:** 20 built-in workflows for AI (TDD, code review, specs...), and
+  your own in a `SKILL.md`.
+- **Shards:** small programs that react to your workspace through a local,
+  permissioned event bus.
+
+## Start [#start]
+
+<Cards>
+  <Card title="Getting started" href="/docs/getting-started">
+    Install, set up your first workspace, use it every day: about 15 minutes.
+  </Card>
+  <Card title="Local LLM" href="/docs/local-llm">
+    Pick a model that fits your machine and run it with Ollama or LM Studio.
+  </Card>
+  <Card title="Skills" href="/docs/skills">
+    The built-in workflows, and how to write and share your own.
+  </Card>
+  <Card title="Shards" href="/docs/shards">
+    Build integrations that react to your workspace.
+  </Card>
+</Cards>
+
+Brokspace is open source (MIT or Apache-2.0). Questions and ideas go to
+[GitHub Discussions](https://github.com/brokspace/brok/discussions).
+
+
+# Integrations (/docs/integrations)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/integrations.md by scripts/sync-docs.mjs. Edit it there. -->
+
+Brokspace stays small and plugs into the tools you already use.
+
+| Integration                                                   | How                                  | Setup               |
+| ------------------------------------------------------------- | ------------------------------------ | ------------------- |
+| Coding agents (Claude Code, Cursor, VS Code / Copilot, Codex) | MCP tools + skills                   | `brok setup agents` |
+| Local LLMs (Ollama, LM Studio)                                | OpenAI-compatible API                | `brok setup llm`    |
+| Hosted LLMs (Anthropic, DeepSeek, any OpenAI-compatible)      | `llm.providers` in `brok.yml`        | export the API key  |
+| Git and submodules                                            | change tracking, hot/cold partitions | automatic           |
+| Team storage (S3, R2, MinIO, Git LFS)                         | index mirroring                      | `brok setup sync`   |
+| Anything else                                                 | write a shard                        | `brok shard new`    |
+
+## Coding agents [#coding-agents]
+
+```sh
+brok setup agents            # detects your agents and asks which to connect
+brok setup agents -a claude -a cursor --yes
+```
+
+For each agent it does two things.
+
+**1. MCP server.** Registers `brok mcp` (a stdio
+[Model Context Protocol](https://modelcontextprotocol.io) server) so the
+agent gets two tools:
+
+| Tool          | What it does                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `brok_search` | Hybrid search over the local index; returns whole functions/classes with `path:start-end` |
+| `brok_status` | What is indexed and whether `brok run` is active                                          |
+
+| Agent             | File written                                  |
+| ----------------- | --------------------------------------------- |
+| Claude Code       | `.mcp.json` (`mcpServers.brokspace`)          |
+| Cursor            | `.cursor/mcp.json` (`mcpServers.brokspace`)   |
+| VS Code / Copilot | `.vscode/mcp.json` (`servers.brokspace`)      |
+| Codex             | prints the snippet for `~/.codex/config.toml` |
+
+Existing entries in those files are preserved; only `brokspace` is added or
+updated. When `brok run` is active, searches reuse its loaded model;
+otherwise `brok mcp` opens the index read-only on demand.
+
+**2. Skills.** Exports the [skills](/docs/skills) to `.claude/skills/` (Claude
+Code) and `.agents/skills/` (Codex, Cursor, Copilot and others), so `/ask-brok`,
+`/grill-me`, `tdd`, `code-review` and the rest are available in the agent.
+
+Commit the generated files to give your whole team the same setup. `brok`
+must be on `PATH` for agents to start `brok mcp`; `brok doctor` checks it.
+
+## Local and hosted LLMs [#local-and-hosted-llms]
+
+See [Local LLM setup](/docs/local-llm). Any OpenAI-compatible endpoint works:
+
+```yaml
+llm:
+  default: ollama
+  providers:
+    ollama: { base_url: http://localhost:11434/v1, model: qwen2.5-coder:7b }
+    company:
+      { base_url: https://llm.internal.example.com/v1, model: gpt-oss-20b, api_key_env: COMPANY_LLM_KEY }
+```
+
+## Editors and scripts: JSON output [#editors-and-scripts-json-output]
+
+Editors (the Brokspace IDE among them), scripts and CI read brok through
+`--json`. Shapes are stable within a minor version.
+
+| Command                                                                  | Output                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brok status --json`                                                     | One document: `version`, `initialized`, `root`, `daemon.running`, `backends`, `embeddings`, `llm` (`provider`, `model`, `base_url`), `index[]` (`tier`, `path`, `files`, `chunks`, `backend`, `semantic`), `shards[]` (`name`, `version`, `description`, `state`, `source`). Outside a workspace: `{"version": ..., "initialized": false}`. |
+| `brok search <query> --json`                                             | One document: `hits[]` with `path`, `start_line`, `end_line`, `kind`, `symbol`, `score`, `content`.                                                                                                                                                                                                                                         |
+| `brok skill list --json`                                                 | One array: `name`, `description`, `user_invoked`, `source`, `bucket` per skill.                                                                                                                                                                                                                                                             |
+| `brok ask ... --json`, `brok review --json`, `brok skill run ... --json` | A stream, one JSON event per line (see below).                                                                                                                                                                                                                                                                                              |
+
+Streaming events:
+
+```json
+{"type": "chunk", "text": "Refresh tokens rotate on every "}
+{"type": "chunk", "text": "use..."}
+{"type": "done", "provider": "ollama", "model": "qwen2.5-coder:7b",
+ "sources": [{"path": "src/auth/auth.service.ts", "start_line": 42, "end_line": 77, "symbol": "refresh"}]}
+```
+
+A failure ends the stream with a non-zero exit code and the message on
+stderr. Follow-up questions pass the conversation so far:
+`brok ask --json --history turns.json "and where is it tested?"`, where
+`turns.json` holds `[{"role": "user", "content": "..."}, {"role":
+"assistant", "content": "..."}]`.
+
+## Shards: integrations you build [#shards-integrations-you-build]
+
+When something is specific to your team (a ticketing system, a deploy
+pipeline, a compliance check), write a shard instead of waiting for a core
+feature: it reacts to workspace events and publishes its own. See
+[Shards](/docs/shards) and start with `brok shard new my-integration`.
+
+
+# Local LLM setup (/docs/local-llm)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/local-llm.md by scripts/sync-docs.mjs. Edit it there. -->
+
+Brokspace answers questions (`brok ask`) and runs skills (`brok skill run`)
+with any OpenAI-compatible model. Running it locally keeps everything
+**free, private and offline**. Search and indexing never need an LLM.
+
+## The short version [#the-short-version]
+
+```sh
+brok setup llm      # also part of `brok init`
+```
+
+It:
+
+1. reads your RAM (and NVIDIA GPU memory) and picks a model size from the
+   table below;
+2. looks for a running **Ollama** (`localhost:11434`) or **LM Studio**
+   (`localhost:1234`) server;
+3. uses a model you already have, or offers to download the recommended one
+   (`ollama pull`);
+4. writes the choice to `.brokspace/brok.yml` (`llm.default`).
+
+Nothing installed yet? It prints the one-line install for your OS. Run it,
+then `brok setup llm` again. `brok doctor` tells you at any time whether the
+model is reachable.
+
+## What your machine can run [#what-your-machine-can-run]
+
+Sizes are for 4-bit quantized models (`Q4_K_M`), the best balance between
+speed and quality.
+
+| Model size                | Memory and GPU                                                 | Typical hardware                          | Recommended (Ollama)                              |
+| ------------------------- | -------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------- |
+| 1B to 3B                  | 8 GB                                                           | Office laptops, entry-level Macs          | `qwen2.5-coder:1.5b`, `llama3.2:3b`               |
+| 3B                        | 16 GB, no GPU                                                  | Business laptops with integrated graphics | `qwen2.5-coder:3b`, `llama3.2:3b`                 |
+| **7B to 9B** (sweet spot) | 16 GB with a GPU (6 GB+) or Apple Silicon; 32 GB without a GPU | Gaming laptops, M1/M2/M3 Macs, desktops   | `qwen2.5-coder:7b`, `llama3:8b`, `deepseek-r1:8b` |
+| 14B to 32B                | A GPU with 12 GB+, or 32 GB with a GPU or Apple Silicon        | Workstations, Mac Pro/Max with 32 GB+     | `qwen2.5-coder:14b`, `deepseek-r1:32b`            |
+
+Without a GPU the model runs on the processor: memory decides what fits,
+but speed decides what is pleasant. A laptop CPU reads a long prompt into a
+7B model at about 15 tokens per second, so a review takes 3 to 5 minutes;
+a 3B model is about twice as fast. That is why machines without a GPU get
+one size smaller. Only NVIDIA GPUs and Apple Silicon are detected; with
+another GPU that Ollama supports, pick the row for your GPU memory.
+
+What to expect: 1B to 3B models answer questions about your code well
+enough (`brok ask`, `brok chat`), but they lose track of longer skills, so
+`brok review`, `brok commit` and most `brok skill run` workflows are much
+better with 7B or larger. Even at 7B, a review is a first pass that can be
+wrong; 14B and hosted models (`brok review -p anthropic`) review much
+better, and commit messages are already good at 7B.
+
+`brok setup llm` applies exactly this table. Override it any time:
+
+```sh
+brok setup llm --provider ollama --model llama3:8b
+```
+
+## Option 1: Ollama (recommended, terminal friendly) [#option-1-ollama-recommended-terminal-friendly]
+
+| OS      | Install                                                                               |
+| ------- | ------------------------------------------------------------------------------------- |
+| Windows | `winget install Ollama.Ollama` or the installer from [ollama.com](https://ollama.com) |
+| macOS   | `brew install ollama` or the app from [ollama.com](https://ollama.com)                |
+| Linux   | `curl -fsSL https://ollama.com/install.sh \| sh`                                      |
+
+```sh
+ollama pull qwen2.5-coder:7b     # or let `brok setup llm` do it
+brok setup llm
+```
+
+## Option 2: LM Studio (graphical) [#option-2-lm-studio-graphical]
+
+1. Download it from [lmstudio.ai](https://lmstudio.ai) (Windows `.exe`,
+   macOS `.dmg` for Apple Silicon or Intel, Linux `.AppImage`:
+   `chmod +x LM_Studio-*.AppImage && ./LM_Studio-*.AppImage`).
+2. Search for `Qwen2.5-Coder-7B` (or the size from the table), pick a
+   `Q4_K_M` or `Q5_K_M` file and download it.
+3. Open the **Developer / Local Server** tab, load the model and press
+   **Start Server** (it listens on `http://localhost:1234`).
+4. Run `brok setup llm`: it finds the server and lets you pick the model.
+
+## Hosted models [#hosted-models]
+
+Prefer a hosted model for some questions? Export its key and choose it per
+request; the providers are preconfigured in `brok.yml`:
+
+```sh
+export ANTHROPIC_API_KEY=...        # PowerShell: $env:ANTHROPIC_API_KEY = "..."
+brok ask -p anthropic "explain the retry policy"
+```
+
+Keys are read from the environment, never stored in `brok.yml`, and secrets
+found in retrieved code are redacted before any prompt leaves your machine.
+
+## Using the same model elsewhere [#using-the-same-model-elsewhere]
+
+- **Aider**: `aider --model ollama/qwen2.5-coder:7b` inside your git
+  repository (`pip install aider-chat`, Python 3.10 to 3.12).
+- **Coding agents** (Claude Code, Cursor, VS Code, Codex): `brok setup agents`
+  gives them the Brokspace search tool and skills; see
+  [Integrations](/docs/integrations).
+
+## Performance tips [#performance-tips]
+
+- **Apple Silicon**: memory is unified, so a 16 GB Mac runs 7B/8B models fast.
+- **NVIDIA / AMD GPUs**: enable full GPU offload in LM Studio or Ollama.
+- **Storage**: keep models on an SSD; loading from a spinning disk is painfully slow.
+- **Smaller is often better** for interactive use: a fast 7B beats a slow
+  14B for everyday questions; switch per request with `-p`.
+
+
+# Shards (/docs/shards)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/shards.md by scripts/sync-docs.mjs. Edit it there. -->
+
+Shards are small programs that react to workspace events. Each one is a
+separate process connected to the `brok run` event bus, restricted to the
+topics its manifest declares.
+
+The fastest way to write one is the
+[brok-shard-template](https://github.com/brokspace/brok-shard-template)
+repository; this page is the reference.
+
+## Lifecycle [#lifecycle]
+
+```sh
+brok shard new my-shard                  # project from brok-shard-template
+brok shard new my-skills --skills-only   # a skill shard: shard.json + skills/
+brok shard install ./my-shard            # local directory (development)
+brok shard install https://github.com/acme/brok-license-check --tag v1.0.0
+brok start                               # starts every enabled shard (or `brok restart`)
+brok bus tail 'license:*'                # watch what it publishes
+brok shard remove brok-license-check
+```
+
+To trigger your shard by hand, publish the event it listens to:
+`brok bus emit file:changed '{"changed":["src/main.rs"],"deleted":[]}'`.
+Windows PowerShell 5.1 drops the inner double quotes when it calls a
+program, so escape them there: `'{\"changed\":[\"src/main.rs\"],\"deleted\":[]}'`
+(PowerShell 7 and other shells need no escaping).
+
+Installing:
+
+1. clones the repository (`--depth 1`, optional `--tag`) or uses the local directory;
+2. validates `shard.json` and the `brok` version requirement;
+3. **shows the requested capabilities and asks for consent** (`--yes` to skip in scripts);
+4. obtains the executable, in order of preference:
+   - a release asset for this platform, verified against its SHA-256;
+   - the manifest's `build.command`, run in the repository;
+   - an `entrypoint` already present in the repository;
+5. moves it into `.brokspace/shards/<name>/` and records the source, commit and
+   binary hash in `shards.lock`.
+
+Disable a shard without removing it in `brok.yml`:
+
+```yaml
+shards:
+  brok-license-check:
+    enabled: false
+```
+
+## `shard.json` [#shardjson]
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/brokspace/brok-sdk/main/shard.schema.json",
+  "name": "brok-security-auditor",
+  "version": "1.0.0",
+  "description": "Flags risky changes in source files",
+  "license": "MIT",
+  "repository": "https://github.com/acme/brok-security-auditor",
+  "brok": ">=0.1.0, <0.2.0",
+  "entrypoint": "bin/security-auditor",
+  "args": [],
+  "runtime": "native",
+  "permissions": {
+    "filesystem": { "read": ["src/"], "write": [] },
+    "network": false,
+    "process": ["git"],
+    "env": ["SEMGREP_*"]
+  },
+  "subscribes_to": ["file:changed"],
+  "publishes_to": ["security:alert"],
+  "build": { "command": ["cargo", "build", "--release"], "artifact": "target/release/security-auditor" },
+  "releases": {
+    "linux-x86_64": { "url": "https://github.com/acme/…/security-auditor-linux-x86_64", "sha256": "…" },
+    "macos-aarch64": { "url": "https://github.com/acme/…/security-auditor-macos-aarch64", "sha256": "…" },
+    "windows-x86_64": {
+      "url": "https://github.com/acme/…/security-auditor-windows-x86_64.exe",
+      "sha256": "…"
+    }
+  }
+}
+```
+
+| Field                               | Required | Rules                                                                                                                              |
+| ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                              | ✓        | `^[a-z][a-z0-9-]{1,63}$`, unique in the workspace                                                                                  |
+| `version`                           | ✓        | SemVer                                                                                                                             |
+| `entrypoint`                        | ✓¹       | Relative path inside the shard directory; `.exe` is appended on Windows                                                            |
+| `skills`                            | ✓¹       | Directories whose subfolders each hold a `SKILL.md` ([skills](/docs/skills))                                                       |
+| `brok`                              |          | SemVer requirement on the runtime version                                                                                          |
+| `runtime`                           |          | `native` (default)                                                                                                                 |
+| `permissions.filesystem.read/write` |          | Workspace relative paths, no `..`, no absolute paths                                                                               |
+| `permissions.network`               |          | `false` by default                                                                                                                 |
+| `permissions.process`               |          | Bare program names the shard intends to run                                                                                        |
+| `permissions.env`                   |          | Variables to pass through: exact names, `PREFIX_*` or `*_SUFFIX`. `BROK_*` is reserved                                             |
+| `subscribes_to` / `publishes_to`    |          | Topic patterns; publishing to `system:*` (or `*`) is not allowed                                                                   |
+| `build.command`                     |          | Program + arguments, executed **without a shell**                                                                                  |
+| `releases.<os>-<arch>`              |          | `https://` URL and 64 hex SHA-256; keys use Rust's `std::env::consts` names (`linux-x86_64`, `macos-aarch64`, `windows-x86_64`, …) |
+
+¹ A shard needs an `entrypoint`, `skills`, or both. Skill-only shards run no
+process, so they cannot declare topics, `build` or `releases`.
+
+Unknown fields are rejected, and all violations are reported at once.
+
+## Topics [#topics]
+
+`namespace:name`, lowercase letters, digits, `-`, `_` and `.` for sub-topics:
+`file:changed`, `agent:ask.chunk`. Patterns are exact topics or a prefix
+ending in `*` (`agent:ask.*`, `file:*`, `*`). Pick a namespace named after
+your shard for your own events. The well-known topics and their payloads are
+listed in [Architecture](/docs/architecture#well-known-topics).
+
+## Runtime contract [#runtime-contract]
+
+`brok run` starts the entrypoint with:
+
+- working directory = workspace root;
+- an environment containing only OS basics (`PATH`, `HOME`, `TEMP`, …),
+  `RUST_LOG`, the variables allowed by `permissions.env`, and:
+
+| Variable                         | Value                              |
+| -------------------------------- | ---------------------------------- |
+| `BROK_ENDPOINT`                  | Socket path / pipe name of the bus |
+| `BROK_TOKEN`                     | The shard's session token (secret) |
+| `BROK_SHARD_NAME`                | Manifest name                      |
+| `BROK_WORKSPACE`                 | Absolute workspace root            |
+| `BROK_FS_READ` / `BROK_FS_WRITE` | Declared paths, `;`-separated      |
+| `BROK_NETWORK`                   | `1` or `0`                         |
+
+- stdout and stderr are captured line by line, prefixed with the shard name in
+  the `brok run` output and appended to `.brokspace/logs/<name>.log`. Log to
+  stderr.
+- On `system:shutdown` (delivered without subscribing), exit within 3 seconds.
+- A non-zero exit is a crash: the shard is restarted with backoff.
+
+## Using the SDK [#using-the-sdk]
+
+```rust
+use brok_sdk::prelude::*;
+
+#[tokio::main]
+async fn main() -> Result<(), ClientError> {
+    let (client, mut inbox) = BrokClient::connect_from_env("my-shard", env!("CARGO_PKG_VERSION")).await?;
+    client.subscribe([TopicPattern::new("file:changed")?]).await?;
+
+    while let Some(event) = inbox.recv().await {
+        if event.is::<Shutdown>() {
+            break;
+        }
+        if let Ok(change) = event.decode::<FileChanged>() {
+            for path in change.changed {
+                // … inspect the file, then publish your own event:
+                // client.emit(&MyFinding { path, … }).await?;
+            }
+        }
+    }
+    Ok(())
+}
+```
+
+- Typed payloads implement `brok_sdk::Payload` (a serde type plus its topic).
+- `client.request(event)` returns a stream of replies; `client.call::<Req,
+  Res>(&req, timeout)` waits for the first typed reply. Example: query the
+  index with `client.call::<SearchRequest, SearchResults>(…)` (add
+  `index:search` to `publishes_to`).
+- `client.reply(&request, &payload)` answers a request; only the requester
+  receives it.
+- `client.context()` returns the workspace root, your `shards.<name>.settings`
+  from `brok.yml` and the `llm` routing table.
+
+Shards do not have to be written in Rust: anything that can open a Unix
+socket / named pipe and exchange length-prefixed JSON frames works. The frame
+format is documented in `brok-sdk/src/frame.rs` and `codec.rs`.
+
+## Security [#security]
+
+What the runtime **enforces**: topic ACLs, `source` stamping, reply routing,
+the scrubbed environment, the working directory.
+
+What is **declared but not yet enforced by the OS**: file system and network
+access. Consent at install time is the safeguard until OS sandboxes (Landlock,
+Seatbelt, AppContainer) land. `build.command` runs arbitrary code from the
+shard repository (e.g. `build.rs`) — the consent prompt shows it before it
+runs. Prefer shards that publish checksum-pinned `releases`.
+
+
+# Skills (/docs/skills)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/skills.md by scripts/sync-docs.mjs. Edit it there. -->
+
+A **skill** is a small, reusable workflow written for AI agents: a folder
+with a `SKILL.md` (YAML frontmatter `name` + `description`, then
+instructions) and optional reference files. Brokspace uses the same
+[Agent Skills](https://github.com/mattpocock/skills) format as Claude Code,
+Codex, Cursor and GitHub Copilot, so a skill written once works everywhere.
+
+```text
+code-review/
+├── SKILL.md            name, description, instructions
+├── agents/openai.yaml  display metadata for Codex (optional)
+└── CHECKLIST.md        reference material linked from SKILL.md (optional)
+```
+
+## Two kinds [#two-kinds]
+
+|               | User-invoked                                | Model-invoked                                |
+| ------------- | ------------------------------------------- | -------------------------------------------- |
+| Who starts it | Only you, by typing `/name`                 | You, or the agent when the task fits         |
+| Frontmatter   | `disable-model-invocation: true`            | (default)                                    |
+| Role          | Orchestrates a flow (`/to-spec`, `/triage`) | A reusable discipline (`tdd`, `code-review`) |
+| Description   | One human-facing line                       | Rich "Use when..." triggers                  |
+
+## Built-in skills [#built-in-skills]
+
+`brok` ships a curated set, embedded in the binary (source:
+[skills/](https://github.com/brokspace/brok/blob/main/skills/README.md)). They cover the whole development loop that
+Brokspace itself uses: align, specify, slice, build test-first, review, ship.
+
+```sh
+brok skill list          # everything available, with its source
+brok skill show tdd      # read one
+```
+
+Not sure where to start? Type `/ask-brok` in your coding agent and describe
+your situation.
+
+## Using skills [#using-skills]
+
+**In your coding agent** (the main way):
+
+```sh
+brok setup agents        # skills + MCP search tool, for the agents it detects
+brok skill export        # skills only; --agent claude|agents|cursor|vscode|codex, --global
+```
+
+Skills land in `.claude/skills/` and the portable `.agents/skills/` (read by
+Codex, Cursor, Copilot and others). Folders are marked `.brokspace-managed`
+and refreshed on every export; brok never overwrites a folder it did not
+create. Commit them to share with your team.
+
+**On your local LLM**, through `brok-agent` (needs `brok run`):
+
+```sh
+brok skill run code-review "the changes in src/api since main"
+brok skill run grill-me "plan: move sessions to redis"
+```
+
+The skill's instructions (and the reference files it links) become the
+system prompt; Brokspace adds relevant code from the index as context.
+
+## Writing your own [#writing-your-own]
+
+```sh
+brok skill new release-notes                  # model-invoked, in .brokspace/skills/
+brok skill new deploy --user-invoked          # a /deploy workflow only you trigger
+```
+
+Workspace skills in `.brokspace/skills/<name>/` **override** built-ins with
+the same name, so you can tailor any built-in to your team. Keep skills
+short and explicit: small local models follow them too. The built-in
+`write-skill` skill walks your agent through it.
+
+## Sharing skills: skill shards [#sharing-skills-skill-shards]
+
+A **skill shard** is a shard with no process, just skills. Publish it as a
+git repository and anyone can install it:
+
+```sh
+brok shard new acme-skills --skills-only      # shard.json + skills/example/
+# edit, push to GitHub, then on any machine:
+brok shard install https://github.com/acme/acme-skills
+brok skill list                               # source: shard:acme-skills
+```
+
+`shard.json` of a skill shard:
+
+```json
+{ "name": "acme-skills", "version": "0.1.0", "skills": ["skills"] }
+```
+
+A shard can also ship skills next to its process (`entrypoint` + `skills`).
+
+## Precedence [#precedence]
+
+When names collide, the first wins: workspace (`.brokspace/skills/`) >
+installed shards > built-in. `brok skill list` reports shadowed skills.
+
+## Credits [#credits]
+
+The built-in workflows are adapted from
+[mattpocock/skills](https://github.com/mattpocock/skills) (MIT); see
+[skills/CREDITS.md](https://github.com/brokspace/brok/blob/main/skills/CREDITS.md).
+
+
+# Architecture (/pt-br/docs/architecture)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/architecture.md by scripts/sync-docs.mjs. Edit it there. -->
+
+This document explains how the pieces of Brokspace fit together. It is aimed
+at contributors and shard authors.
+
+## Crates and repositories [#crates-and-repositories]
+
+```text
+brok-sdk  (own repo, crates.io)   protocol · manifest · transport · client
+   ▲
+   ├── brok-core      workspace discovery, .brokspace/ layout, brok.yml, partitions, git
+   ├── brok-bus       event bus: listener, sessions, router actor, token auth / ACL
+   ├── brok-index     chunking, Arrow schema, BM25, stores, embeddings, search, index service
+   ├── brok-shard     registry, installer, sandbox environment, supervisor
+   └── brok-cli       the `brok` binary: one module per subcommand
+brok-agent (own repo)            default system shard, depends only on brok-sdk
+```
+
+Rules of thumb: library crates use `thiserror`/`anyhow::Result` with context
+and never print; only `brok-cli` talks to the terminal. Optional native
+backends are cargo features, so the pure-Rust build always works.
+
+## Workspace layout [#workspace-layout]
+
+```text
+<workspace>/.brokspace/
+├── brok.yml                configuration
+├── .gitignore              runtime state is never committed by accident
+├── cache/models/           ONNX weights + tokenizer
+├── databases/
+│   ├── .lock               exclusive writer lock (brok index / brok run)
+│   ├── cold/               root repository partition
+│   └── hot/<submodule-id>/ one micro-database per git submodule
+│       ├── files.json      manifest: path → sha256, size, mtime, chunk count
+│       ├── bm25.bin        BM25 index (postcard)
+│       └── chunks.lance/ | CURRENT + chunks-NNNNNNNN.arrow
+├── shards/
+│   ├── shards.lock         provenance + binary sha256 of every shard
+│   └── <name>/{shard.json, bin/…}
+├── run/                    operator.token (0600), brok.pid, brok.sock (Unix)
+└── logs/<shard>.log
+```
+
+## Indexing pipeline [#indexing-pipeline]
+
+1. **Walk** with the `ignore` crate (nested `.gitignore`s, global excludes),
+   then apply `index.include` / `index.exclude`.
+2. **Route** each file to the deepest partition containing it
+   (`PartitionMap::resolve`).
+3. **Skip unchanged files** cheaply: same size and mtime as in `files.json` →
+   untouched; otherwise hash the content and compare.
+4. **Chunk** in parallel (rayon). The AST chunker emits one chunk per
+   definition, attaches doc comments/attributes/decorators, splits large
+   containers into a header plus members (`parent` = the container) and
+   groups loose top-level code into `preamble` chunks.
+5. **Embed** in batches on a blocking thread (`spawn_blocking`), prefixing
+   `search_document:` as nomic models expect; mean pooling → layer norm →
+   Matryoshka truncation → L2 normalization.
+6. **Write**: delete the file's previous chunks, append the new ones, update
+   BM25 and the manifest, then commit atomically. Files are processed in
+   batches of 512 so memory stays bounded on large repositories.
+
+`brok index` and `brok run` take an exclusive OS file lock on
+`databases/.lock`; readers (`brok search`, `brok status`) never block.
+
+### Stores [#stores]
+
+Both stores share one Arrow schema (`brok-index/src/schema.rs`): `id`, `path`,
+`language`, `kind`, `symbol`, `parent`, `signature`, line and byte ranges,
+`file_hash`, `content` and an optional `FixedSizeList<Float32>` `vector`.
+
+- **LanceDB**: deletes/appends go straight to the table; compaction runs every
+  16 writes and an ANN index is built past 10 000 rows.
+- **Arrow IPC**: each commit writes a new immutable generation file and flips
+  `CURRENT`. Files are memory-mapped and decoded zero-copy; immutability is
+  what makes `mmap` sound and lets readers keep an old generation (Windows
+  cannot replace a mapped file). Vector search is exact (dot product over
+  normalized vectors).
+
+## Search [#search]
+
+For each partition: BM25 top-k and vector top-k (when the partition has
+vectors of the right size) → Reciprocal Rank Fusion (`k = 60`), normalized so
+that rank 1 in every list scores 1.0. Partitions other than the focus (the
+partition of the current directory) are multiplied by `search.cold_weight`.
+The final top-k chunk ids are materialized from their stores.
+
+## Event bus [#event-bus]
+
+- **Transport**: Unix domain socket at `.brokspace/run/brok.sock` (falls back
+  to `$XDG_RUNTIME_DIR` for long paths) or the named pipe
+  `\\.\pipe\brok-<hash of the workspace path>`. Frames are a 4-byte big-endian
+  length plus JSON, capped at 16 MiB.
+- **Handshake**: `Hello{protocol, name, version, token}` → `Welcome{session,
+  identity, context}` or `Error`. Tokens are 256-bit random, stored hashed.
+- **Router**: a single actor task owns all state, so routing is lock-free.
+  Delivery uses bounded queues and `try_send`: a slow client loses events (and
+  is logged) rather than stalling everyone.
+- **Semantics**: topic patterns (`file:*`), `source` stamped by the bus,
+  `system:*` reserved and broadcast, request/reply via `correlation_id` routed
+  only to the requester (a bounded table with a 15 minute TTL).
+
+### Built-in participants [#built-in-participants]
+
+| Participant                                 | Identity            | Publishes            | Subscribes                     |
+| ------------------------------------------- | ------------------- | -------------------- | ------------------------------ |
+| CLI (`brok ask`, `brok bus`, `brok search`) | `operator`          | any non-system topic | `*`                            |
+| Index service                               | `brok-index`        | `index:*`            | `file:changed`, `index:search` |
+| Shards                                      | their manifest name | `publishes_to`       | `subscribes_to`                |
+
+### Well-known topics [#well-known-topics]
+
+| Topic                                  | Payload                                | Direction                  |
+| -------------------------------------- | -------------------------------------- | -------------------------- |
+| `file:changed`                         | `{changed: [path], deleted: [path]}`   | agent → index (and anyone) |
+| `index:search` / `index:search.result` | `SearchRequest` / `SearchResults`      | request/reply              |
+| `index:updated`                        | counts and duration                    | index → anyone             |
+| `agent:ask`                            | `{prompt, provider?, context_chunks?}` | CLI → agent                |
+| `agent:ask.chunk` / `.done` / `.error` | streamed reply                         | agent → requester          |
+| `review:result`                        | `{path, verdict, summary}`             | agent → anyone             |
+| `system:shutdown`                      | `{reason}`                             | runtime → everyone         |
+
+Types live in `brok_sdk::payload`.
+
+## Daemon lifecycle [#daemon-lifecycle]
+
+`brok run` is the daemon in the foreground; `brok start` launches the same
+process detached (output in `.brokspace/logs/brok.log`), and `brok ask`,
+`chat`, `review`, `commit` and `skill run` start it on demand. Readiness means
+the bus is listening and, when installed, `brok-agent` is connected; the CLI
+checks it with a `daemon:status` request.
+
+Start: bind the bus → issue the operator token (`run/operator.token`) → start
+the control service (`daemon:status`, `daemon:stop`) → open the index for
+writing (falls back to read-only search if the model or lock is unavailable),
+catch up on changes made while stopped, and connect the index service → for
+each enabled shard, issue a token from its manifest, build its sandbox
+environment and supervise it.
+
+Stop (Ctrl+C, or `brok stop` publishing `daemon:stop`): broadcast
+`system:shutdown` → shards get 3 seconds to exit, then are killed → index
+service stops → bus stops → runtime files removed.
+
+Freshness: `brok-agent` reports dirty files every few seconds and, when a
+repository's `HEAD` moves (commit, pull, checkout), the files that differ
+between the two commits; root, submodules and nested repositories alike.
+
+Crashing shards restart with exponential backoff (1 s … 30 s); five crashes
+within a minute and the supervisor gives up.
+
+## Memory profile [#memory-profile]
+
+- Text-only search (embeddings disabled or model missing): BM25 postings in
+  memory plus memory-mapped chunk data; typically a few tens of MB.
+- Semantic search loads the quantized model (~140 MB of weights) once per
+  process. Run `brok run` and searches reuse its already-loaded model through
+  the bus instead of loading their own.
+- Indexing streams files in batches; the Arrow store keeps staged batches in
+  memory until commit, LanceDB writes per batch.
+
+
+# Configuration reference (/pt-br/docs/configuration)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/configuration.md by scripts/sync-docs.mjs. Edit it there. -->
+
+`brok init` writes `.brokspace/brok.yml` with comments (commands that change
+the file, like `brok setup llm`, keep them; comments you add yourself are
+dropped when brok rewrites the file). Every key is optional;
+missing keys take the defaults below. Unknown keys are rejected with a
+"did you mean" style error, so typos never go unnoticed.
+
+Changes take effect on the next command (or after restarting `brok run`).
+Changing `embeddings.model`, `embeddings.dimensions` or `index.store`
+triggers a rebuild of the affected partitions on the next `brok index`.
+
+## `workspace` [#workspace]
+
+| Key          | Default | Description                                                                                                                                 |
+| ------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submodules` | `true`  | Index git submodules and git repositories nested in the workspace (up to 4 levels, e.g. a folder of repos) as independent _hot_ partitions. |
+
+## `index` [#index]
+
+| Key               | Default                                                                                                                                                                    | Description                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `include`         | `["**/*"]`                                                                                                                                                                 | Globs (relative to the workspace root) of files to index.                                               |
+| `exclude`         | `.git`, `.brokspace`, `target`, `node_modules`, `dist`, `build`, lock files (`*.lock`, `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `go.sum`), `*.min.js` | Globs to skip. `.gitignore` files are always honored on top of this.                                    |
+| `max_file_kb`     | `512`                                                                                                                                                                      | Larger files are skipped. Binary files (NUL bytes) and non UTF-8 files are always skipped.              |
+| `max_chunk_lines` | `120`                                                                                                                                                                      | A syntactic unit longer than this is split: containers into members, other nodes at line boundaries.    |
+| `store`           | `auto`                                                                                                                                                                     | `auto` (LanceDB when compiled in), `lancedb` or `arrow` (memory-mapped Arrow IPC, exact vector search). |
+
+## `embeddings` [#embeddings]
+
+| Key          | Default                 | Description                                                                                |
+| ------------ | ----------------------- | ------------------------------------------------------------------------------------------ |
+| `enabled`    | `true`                  | `false` runs on BM25 text search only: no download, minimal memory.                        |
+| `model`      | `nomic-embed-text-v1.5` | The only supported model today.                                                            |
+| `variant`    | `quantized`             | `quantized` (~140 MB, int8) or `full` (~550 MB, fp32).                                     |
+| `dimensions` | `768`                   | Matryoshka truncation: `64`, `128`, `256`, `512` or `768`.                                 |
+| `device`     | `auto`                  | `auto`, `cpu`, `cuda`, `coreml`, `directml` (GPU devices need the matching build feature). |
+| `batch_size` | `16`                    | Texts per inference batch.                                                                 |
+
+Model files are downloaded once per user and shared by every workspace:
+`~/.cache/brokspace/models` (Linux), `~/Library/Caches/brokspace/models`
+(macOS), `%LOCALAPPDATA%\brokspace\models` (Windows). Set `BROK_MODELS_DIR`
+to use another directory. A copy inside `.brokspace/cache/models/` (from
+older versions) keeps working.
+
+## User defaults [#user-defaults]
+
+`brok setup llm` also stores your LLM choice in the user configuration
+(`~/.config/brokspace/config.yml`, `~/Library/Application Support/brokspace/`
+or `%APPDATA%\brokspace\`; override with `BROK_CONFIG_DIR`). `brok init`
+applies it to every new workspace, so you choose a model once per machine.
+
+## `search` [#search]
+
+| Key           | Default | Description                                                                  |
+| ------------- | ------- | ---------------------------------------------------------------------------- |
+| `limit`       | `8`     | Default number of results.                                                   |
+| `cold_weight` | `0.85`  | Score multiplier for partitions other than the one you run the command from. |
+
+## `llm` [#llm]
+
+OpenAI-compatible chat completion endpoints used by `brok-agent`.
+
+```yaml
+llm:
+  default: ollama
+  providers:
+    ollama: { base_url: http://localhost:11434/v1, model: qwen2.5-coder:7b }
+    lmstudio: { base_url: http://localhost:1234/v1, model: qwen2.5-coder-7b-instruct }
+    anthropic:
+      base_url: https://api.anthropic.com/v1
+      model: claude-sonnet-5-5
+      api_key_env: ANTHROPIC_API_KEY
+      max_tokens: 2048
+```
+
+| Key                                           | Description                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `default`                                     | Provider used unless `brok ask --provider` says otherwise. Must exist in `providers`. |
+| `providers.<name>.base_url`                   | URL up to and including `/v1`.                                                        |
+| `providers.<name>.model`                      | Model name as the provider expects it.                                                |
+| `providers.<name>.api_key_env`                | **Name** of the environment variable holding the key. Keys never go in this file.     |
+| `providers.<name>.temperature` / `max_tokens` | Optional sampling settings.                                                           |
+
+## `sync` [#sync]
+
+Where the index is mirrored, configured with `brok setup sync`.
+
+| Key                                                | Description                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `backend`                                          | `none`, `s3`, `r2`, `minio` or `git-lfs`.                                                               |
+| `remote.bucket` / `prefix` / `region` / `endpoint` | Object storage coordinates.                                                                             |
+| `remote.access_key_env` / `secret_key_env`         | Names of the variables holding the credentials (default `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). |
+
+`git-lfs` tracks `.brokspace/databases/**` with Git LFS and stops ignoring it,
+so the index travels with the repository. The object storage sync engine
+(`brok sync`) is on the roadmap: today `brok setup sync` records the target.
+
+## `shards` [#shards]
+
+```yaml
+shards:
+  brok-agent:
+    enabled: true # brok run starts it (shards not listed are enabled)
+    settings: # free-form, handed to the shard when it connects
+      watch_interval_secs: 5
+```
+
+Each shard documents its own `settings`. For `brok-agent` see its
+[README](https://github.com/brokspace/brok-agent#settings).
+
+## Environment variables [#environment-variables]
+
+| Variable          | Used by | Purpose                                                     |
+| ----------------- | ------- | ----------------------------------------------------------- |
+| `RUST_LOG`        | all     | Log filter, e.g. `RUST_LOG=brok_index=debug`.               |
+| `NO_COLOR`        | CLI     | Disable colors.                                             |
+| `BROK_MODELS_DIR` | CLI     | Embedding model cache (default: the OS cache directory).    |
+| `BROK_CONFIG_DIR` | CLI     | User defaults directory (default: the OS config directory). |
+| `BROK_*` (others) | shards  | Set by `brok run` for shard processes; reserved.            |
+
+
+# Getting started with Brokspace (/pt-br/docs/getting-started)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/getting-started.md by scripts/sync-docs.mjs. Edit it there. -->
+
+From zero to a productive workspace in about 15 minutes. Each step is short;
+skip what you do not need.
+
+1. [Install brok](#1-install-brok)
+2. [Get a local LLM (optional)](#2-get-a-local-llm-optional)
+3. [Set up your first workspace](#3-set-up-your-first-workspace)
+4. [Use it every day](#4-use-it-every-day)
+5. [Connect your coding agent](#5-connect-your-coding-agent)
+6. [Configure](#6-configure)
+7. [Skills](#7-skills)
+8. [Shards](#8-shards)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Update brok](#10-update-brok)
+11. [Uninstall](#11-uninstall)
+
+---
+
+## 1. Install brok [#1-install-brok]
+
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/brokspace/brok/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/brokspace/brok/main/scripts/install.ps1 | iex
+```
+
+Both install two programs, `brok` and `brok-agent`, and check their
+checksums. Open a new terminal and check:
+
+```sh
+brok --version
+```
+
+**Company laptop blocks the script?** Download `brok-windows-x86_64.exe`
+from the [brok release](https://github.com/brokspace/brok/releases/latest)
+and `brok-agent-windows-x86_64.exe` from the
+[agent release](https://github.com/brokspace/brok-agent/releases/latest),
+rename them `brok.exe` and `brok-agent.exe`, put both in one folder and add
+that folder to your `PATH`.
+
+**Prefer Cargo?** `cargo install brok-cli brok-agent` (needs a C compiler and
+`protoc`), or `cargo install brok-cli brok-agent --no-default-features` for a
+lighter build with text search only.
+
+---
+
+## 2. Get a local LLM (optional) [#2-get-a-local-llm-optional]
+
+Search works without any LLM. Answers (`brok ask`, `chat`, `review`,
+`commit`) need one. A local model is free, private and works offline.
+
+**Ollama** (recommended):
+
+| OS      | Install                                          |
+| ------- | ------------------------------------------------ |
+| Windows | `winget install Ollama.Ollama`                   |
+| macOS   | `brew install ollama`                            |
+| Linux   | `curl -fsSL https://ollama.com/install.sh \| sh` |
+
+Pick the model for your machine:
+
+| Your machine                                                   | Model                | Download                         |
+| -------------------------------------------------------------- | -------------------- | -------------------------------- |
+| 8 GB                                                           | `qwen2.5-coder:1.5b` | `ollama pull qwen2.5-coder:1.5b` |
+| 16 GB, no GPU (most business laptops)                          | `qwen2.5-coder:3b`   | `ollama pull qwen2.5-coder:3b`   |
+| 16 GB with a GPU (6 GB+) or Apple Silicon; 32 GB without a GPU | `qwen2.5-coder:7b`   | `ollama pull qwen2.5-coder:7b`   |
+| A GPU with 12 GB+, or 32 GB with a GPU or Apple Silicon        | `qwen2.5-coder:14b`  | `ollama pull qwen2.5-coder:14b`  |
+
+Not sure? Skip the pull: `brok init` (next step) measures your machine and
+offers to download the right one.
+
+Small models (1.5b, 3b) are fine for questions (`ask`, `chat`); reviews and
+commit messages are much better with 7b or larger. Without a GPU, a 7b
+model takes a few minutes per review, which is why the table suggests 3b
+there.
+
+Prefer a graphical app? [LM Studio](https://lmstudio.ai) works too: download a
+model, open **Developer / Local Server** and press **Start Server**. More in
+[Local LLM setup](/docs/local-llm).
+
+---
+
+## 3. Set up your first workspace [#3-set-up-your-first-workspace]
+
+Go to your project (one repository, or a folder holding several) and run
+(want a sample project first? clone
+[example-nestjs](https://github.com/brokspace/example-nestjs)):
+
+```sh
+cd ~/code/my-project
+brok init
+```
+
+It walks through six steps and asks before anything big:
+
+| Step               | What happens                                                               |
+| ------------------ | -------------------------------------------------------------------------- |
+| 1. Workspace       | Creates `.brokspace/` with a commented `brok.yml`                          |
+| 2. Agent           | Installs `brok-agent`, the helper that tracks changes and talks to the LLM |
+| 3. Semantic search | Downloads the search model once (~140 MB, shared by all your projects)     |
+| 4. Local LLM       | Finds Ollama / LM Studio and picks a model that fits your machine          |
+| 5. Index           | Indexes your code (functions, classes and sections, not raw text)          |
+| 6. Coding agents   | Connects Claude Code, Cursor, VS Code or Codex (skills + search tool)      |
+
+Want no questions? `brok init --yes` accepts every recommendation.
+Then check the result:
+
+```sh
+brok doctor
+```
+
+Every line is either ✓, or a `!` with the exact command that fixes it.
+
+> Your next project is faster: the search model and your LLM choice are
+> remembered, so `brok init` there takes seconds.
+
+---
+
+## 4. Use it every day [#4-use-it-every-day]
+
+```sh
+brok search "where do we validate tokens"     # find code by meaning or by name
+brok ask "how does the refresh flow work?"    # an answer from your LLM, with sources
+brok chat                                     # a conversation with follow-up questions
+brok review                                   # AI review of your uncommitted changes
+git add -p && brok commit                     # commit message written from the staged diff
+```
+
+The first `ask`, `chat`, `review` or `commit` starts brok in the background.
+From then on the index follows you: saved files, commits, pulls and branch
+switches are picked up within seconds.
+
+| You want to...                          | Run                                                               |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| Start / stop the background service     | `brok start` / `brok stop`                                        |
+| Restart it after editing `brok.yml`     | `brok restart`                                                    |
+| See what it is doing                    | `brok logs -f`                                                    |
+| See what is indexed                     | `brok status`                                                     |
+| Review only staged changes, or a branch | `brok review --staged` / `brok review --base main`                |
+| Just print a commit message             | `brok commit --print`                                             |
+| Use a different model for one question  | `brok ask -p anthropic "..."`                                     |
+| Show whole results, or JSON for scripts | `brok search "..." --full` / `--json`                             |
+| Rebuild the index from scratch          | `brok index --rebuild`                                            |
+| Tab completion                          | `brok completions bash >> ~/.bashrc` (also zsh, fish, powershell) |
+
+**About AI reviews.** With a local 7b model, `brok review` is a quick first
+pass: it catches slips you would rather not push, but it also gets things
+wrong (we have seen it invent a missing validation). Read its findings as
+questions, not verdicts. For a review you want to rely on, use a 14b model
+or a hosted one for that run: `brok review -p anthropic` (see
+[Configure](#6-configure) for API keys).
+
+Inside `brok chat`: `/skill grill-me` applies a skill to the conversation,
+`/clear` forgets it, `/exit` leaves.
+
+---
+
+## 5. Connect your coding agent [#5-connect-your-coding-agent]
+
+If you skipped step 6 of `brok init`:
+
+```sh
+brok setup agents
+```
+
+It detects your agents and, for each one, adds:
+
+- a **search tool** (`brok_search`) through MCP, so the agent finds code by
+  meaning before grepping;
+- the **built-in skills**, such as `/ask-brok`, `/grill-me`, `/to-spec`,
+  `tdd` and `code-review`.
+
+| Agent             | Files written                                                       |
+| ----------------- | ------------------------------------------------------------------- |
+| Claude Code       | `.mcp.json`, `.claude/skills/`                                      |
+| Cursor            | `.cursor/mcp.json`, `.agents/skills/`                               |
+| VS Code / Copilot | `.vscode/mcp.json`, `.agents/skills/`                               |
+| Codex             | `.agents/skills/` (prints the MCP lines for `~/.codex/config.toml`) |
+
+Commit these files and your whole team gets the same setup. In your agent,
+start with `/ask-brok` and describe what you want to do.
+
+---
+
+## 6. Configure [#6-configure]
+
+Everything lives in **`.brokspace/brok.yml`**. Every key is optional and the
+defaults are sensible. The settings people change most:
+
+```yaml
+llm:
+  default: ollama # which provider `brok ask` uses
+  providers:
+    ollama:
+      base_url: http://localhost:11434/v1
+      model: qwen2.5-coder:7b
+    anthropic: # hosted models: the key comes from an env var
+      base_url: https://api.anthropic.com/v1
+      model: claude-sonnet-5-5
+      api_key_env: ANTHROPIC_API_KEY
+
+embeddings:
+  enabled: true # false = text search only, less memory
+
+index:
+  exclude: # .gitignore is always respected too
+    - "**/node_modules/**"
+    - "**/*.min.js"
+    - "docs/archive/**"
+
+shards:
+  brok-agent:
+    settings:
+      review: # optional AI review of matching files on change
+        enabled: false
+        include: ["src/api/**"]
+```
+
+Easier ways to change things:
+
+| Change                                   | Command                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| Switch the local LLM or model            | `brok setup llm` (or `brok setup llm --provider ollama --model llama3:8b`) |
+| Connect more coding agents               | `brok setup agents`                                                        |
+| Share the index (Git LFS, S3, R2, MinIO) | `brok setup sync`                                                          |
+
+After editing `brok.yml`, run `brok restart`. Every key is explained in
+[Configuration reference](/docs/configuration).
+
+**API keys** are never written to files: export them in your shell
+(`export ANTHROPIC_API_KEY=...`, or `$env:ANTHROPIC_API_KEY = "..."` in
+PowerShell) and Brokspace reads them when needed. Secrets found in your code
+are removed from the context before anything is sent to an LLM.
+
+---
+
+## 7. Skills [#7-skills]
+
+A skill is a small, reusable workflow for AI: a `SKILL.md` file with
+instructions. Brokspace ships 20 of them.
+
+```sh
+brok skill list                                    # what is available
+brok skill show tdd                                # read one
+brok skill run code-review "the session handling"  # run one on your local LLM
+```
+
+**User-invoked** skills are started by you (type `/name` in your agent, e.g.
+`/grill-me` before a big change). **Model-invoked** skills are picked by the
+agent when the task fits (e.g. `tdd`, `code-review`).
+
+Write your own:
+
+```sh
+brok skill new release-notes          # creates .brokspace/skills/release-notes/SKILL.md
+brok skill export                     # refresh your coding agents with it
+```
+
+A workspace skill with the same name as a built-in one replaces it, so you
+can tailor any built-in to your team. More in [Skills](/docs/skills).
+
+---
+
+## 8. Shards [#8-shards]
+
+Shards are small programs that react to what happens in your workspace (a
+file changed, a question was asked) and can publish their own events. The
+agent you installed is one.
+
+```sh
+brok shard list                                             # what is installed
+brok shard install https://github.com/someone/some-shard    # shows its permissions before installing
+brok shard new my-shard                                     # start your own (Rust project)
+brok shard new my-skills --skills-only                      # or just share skills, no code
+brok restart                                                # start new shards
+brok bus tail                                               # watch events live while developing
+```
+
+Every shard lists the permissions it wants in `shard.json`, and you approve
+them when installing. Guide: [Shards](/docs/shards).
+
+---
+
+## 9. Troubleshooting [#9-troubleshooting]
+
+Start with `brok doctor`: it checks everything and prints the fix.
+
+| Symptom                                     | Fix                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no answer from the agent`                  | Start your LLM (open Ollama / LM Studio), then `brok doctor`                                                                                                                                                                        |
+| `ollama ... is not installed`               | `ollama pull <model>` as shown by `brok doctor`                                                                                                                                                                                     |
+| Answers take minutes                        | The model runs on your CPU. Normal for 7b on a laptop without a GPU (a review can take 3 to 5 minutes); for faster answers use 3b: `ollama pull qwen2.5-coder:3b`, then `brok setup llm --provider ollama --model qwen2.5-coder:3b` |
+| Search misses recent code                   | `brok status`; if the daemon is stopped, `brok start` catches up                                                                                                                                                                    |
+| `another brok process is writing the index` | `brok` is running in the background and already indexes for you; skip `brok index`, or `brok stop` first                                                                                                                            |
+| Results come back as text only              | The search model is missing: `brok model download`                                                                                                                                                                                  |
+| Agent does not show the brok tools          | `brok` must be on `PATH`; run `brok setup agents` and restart the agent                                                                                                                                                             |
+| Odd behavior after an upgrade               | `brok restart`; if it persists, `brok index --rebuild`                                                                                                                                                                              |
+| Windows: errors about long paths            | Enable long paths (`brok doctor` shows the command) or use a shorter folder                                                                                                                                                         |
+
+Still stuck? Run `brok logs -n 100` and ask in
+[Discussions](https://github.com/brokspace/brok/discussions), including the
+output of `brok doctor`.
+
+---
+
+## 10. Update brok [#10-update-brok]
+
+```sh
+brok upgrade --check    # is there a new version, and what changed?
+brok upgrade            # shows what changed, asks, then upgrades
+```
+
+`brok upgrade` downloads the new `brok` and `brok-agent`, checks them
+against the release checksums, swaps them in and restarts brok in every
+workspace where it was running (each workspace's agent is refreshed on
+that restart). `brok doctor` tells you when a new version is out.
+
+Then run `brok skill export` in your workspaces so your coding agents get
+the updated built-in skills.
+
+Installed with Cargo? Upgrade with `cargo install brok-cli brok-agent`.
+Coming from brok 0.2.1 or older (no `upgrade` command yet)? Run the install
+command from [step 1](#1-install-brok) again, once.
+
+---
+
+## 11. Uninstall [#11-uninstall]
+
+```sh
+brok stop                    # in each workspace where it runs
+```
+
+Then delete:
+
+- the `.brokspace/` folder of each workspace (plus `.agents/skills`,
+  `.claude/skills` and the MCP files if you no longer want them);
+- the shared model cache: `~/.cache/brokspace` (Linux),
+  `~/Library/Caches/brokspace` (macOS), `%LOCALAPPDATA%\brokspace` (Windows);
+- your defaults: `~/.config/brokspace` (Linux),
+  `~/Library/Application Support/brokspace` (macOS), `%APPDATA%\brokspace`
+  (Windows);
+- the `brok` and `brok-agent` programs (`~/.local/bin`, or
+  `%LOCALAPPDATA%\Programs\brok` on Windows; `cargo uninstall brok-cli brok-agent`
+  if you used Cargo).
+
+
+# Shard Hub (prévia) (/pt-br/docs/hub)
+
+<Callout title="Em breve">
+  O Hub está sendo construído. Até ele abrir, instale shards de qualquer
+  repositório git com `brok shard install <url>`.
+</Callout>
+
+O Brokspace Hub será o catálogo oficial de shards feitos pelo time do
+Brokspace e, mais tarde, um registro em que qualquer pessoa poderá publicar,
+no espírito do Docker Hub:
+
+- **Shards e pacotes de skills oficiais**, revisados e versionados.
+- **Instalação com um comando** pela CLI e pela Brokspace IDE.
+- **Permissões às claras:** cada shard lista o que pode ler, escrever,
+  executar e acessar antes de você instalá-lo.
+
+Hoje, crie os seus com [Shards](/pt-br/docs/shards) e
+[Skills](/pt-br/docs/skills), começando pelo
+[template de shard](https://github.com/brokspace/brok-shard-template).
+
+
+# Brokspace IDE (/pt-br/docs/ide)
+
+A Brokspace IDE é feita sobre o [Eclipse Theia](https://theia-ide.org),
+então extensões do VS Code do [Open VSX](https://open-vsx.org) funcionam
+nela. Ela já vem com o `brok` e o `brok-agent` e os coloca no seu `PATH`.
+
+![Página inicial da Brokspace IDE](/images/ide-home.png)
+
+## Instalação [#instalação]
+
+<Tabs items={['macOS', 'Debian / Ubuntu', 'Linux (outros)', 'Windows']}>
+  <Tab value="macOS">
+    ```sh
+    brew install --cask brokspace/tap/brokspace-ide
+    ```
+    Na primeira vez, abra com clique direito > **Abrir** enquanto o app ainda
+    não é notarizado.
+  </Tab>
+  <Tab value="Debian / Ubuntu">
+    ```sh
+    curl -fsSL https://brokspace.github.io/apt/brokspace-archive-keyring.gpg \
+      | sudo tee /usr/share/keyrings/brokspace-archive-keyring.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/brokspace-archive-keyring.gpg] https://brokspace.github.io/apt stable main" \
+      | sudo tee /etc/apt/sources.list.d/brokspace.list
+    sudo apt update && sudo apt install brokspace-ide
+    ```
+  </Tab>
+  <Tab value="Linux (outros)">
+    Baixe o AppImage ou o `.tar.gz` da
+    [versão mais recente](https://github.com/brokspace/ide/releases/latest).
+  </Tab>
+  <Tab value="Windows">
+    Baixe `BrokspaceIDE-<versão>-windows-x64-setup.exe` da
+    [versão mais recente](https://github.com/brokspace/ide/releases/latest).
+    No SmartScreen, escolha **Mais informações > Executar assim mesmo**
+    enquanto o instalador ainda não é assinado.
+  </Tab>
+</Tabs>
+
+A IDE se atualiza sozinha pelo GitHub Releases. Para receber respostas
+escritas você precisa de um LLM: veja [LLM local](/pt-br/docs/local-llm) (a
+busca funciona sem ele).
+
+## Seus primeiros minutos [#seus-primeiros-minutos]
+
+A janela começa enxuta: Explorer, Busca, Controle de Código-Fonte e Brokspace
+à esquerda, e o **agente Brokspace** fixo à direita. Depuração, Testes e
+Extensões ficam a um atalho de distância.
+
+1. **Abra uma pasta** (Arquivo > Abrir Pasta). Se ela ainda não tem um
+   workspace Brokspace, a visão Brokspace oferece **Configurar Workspace**:
+   ela roda `brok init` para você.
+2. **Pergunte.** Digite uma pergunta na página inicial ou no painel do
+   agente: o agente Brokspace responde com o seu LLM e cita as fontes usadas;
+   clique em uma fonte para abrir o arquivo naquela linha. Perguntas de
+   acompanhamento mantêm a conversa. Pressione `Ctrl+Shift+A`
+   (`Cmd+Shift+A` no macOS) para o **modo foco no agente**, em que o agente
+   ocupa a maior parte da janela.
+3. **Busque.** A visão Brokspace (o "B" dobrado na barra de atividades)
+   encontra código pelo significado ou pelo nome; clique em um resultado para
+   abri-lo.
+4. **Revise e faça commit.** Digite `/review` no chat (ou `/review staged`,
+   `/review base main`). No Controle de Código-Fonte, o botão ✨ escreve a
+   mensagem de commit a partir das alterações preparadas.
+
+## A visão Brokspace [#a-visão-brokspace]
+
+| Seção | O que mostra |
+|---|---|
+| **Visão Geral** | Se o Brokspace está rodando, o modelo, o índice, a busca e Perguntar / Revisar / Commit |
+| **Shards** | Cada shard instalado e seu estado; expanda um para ver o que ele lê e escreve, se usa a rede, os programas que executa, os eventos que escuta e publica, e de onde veio. Instale, crie ou remova shards pela barra de ferramentas |
+| **Skills** | Fluxos de trabalho que você executa e as skills que seus agentes usam; clique para executar |
+
+## O agente Brokspace [#o-agente-brokspace]
+
+Toda solicitação passa pelo `brok`, que a envia ao LLM definido em
+`.brokspace/brok.yml` (Ollama, LM Studio ou uma API hospedada compatível com
+OpenAI). Sem um LLM, ou quando ele não responde, o agente responde com o que
+o índice local encontrou, em forma de links.
+
+| Digite | Ele executa |
+|---|---|
+| Uma pergunta | `brok ask` com a conversa até aqui |
+| `/review` | Uma revisão das suas alterações não commitadas |
+| `/review staged` | Uma revisão das alterações preparadas |
+| `/review base <ref>` | Uma revisão deste branch em relação a `<ref>` |
+| `/skill <nome> <entrada>` | Uma skill no seu LLM, por exemplo `/skill tdd adicionar um campo de prioridade` |
+
+## Comandos e idiomas [#comandos-e-idiomas]
+
+Tudo também está no menu **Brokspace** e na paleta de comandos: Configurar
+Workspace, Iniciar / Parar / Reiniciar, Reconstruir Índice, Diagnóstico,
+Instalar, Criar e Remover Shard, Exportar Skills para Agentes de Código,
+Executar Skill, Revisar, Escrever Mensagem de Commit. A barra de status
+mostra se o Brokspace está rodando e qual modelo ele usa.
+
+A IDE está em inglês e em português do Brasil. Ela começa em português em um
+sistema em português; troque em **Idioma** na página inicial.
+
+## Como funciona [#como-funciona]
+
+A IDE conversa com o Brokspace apenas pela CLI `brok` e sua saída JSON (veja
+[Integrações](/pt-br/docs/integrations)), então ela mostra exatamente o que o
+`brok` vê, e tudo o que ela faz você também pode fazer em um terminal. Ela
+precisa do brok 0.2.4 ou mais recente; o que vem com ela atende.
+
+
+# Introdução (/pt-br/docs)
+
+O Brokspace (`brok`) indexa seu código (um repositório, seus submódulos ou
+uma pasta inteira de repositórios) em um mecanismo de busca híbrido local,
+conecta esse índice ao LLM que você escolher e o liga aos agentes de código
+que você já usa. Nada sai da sua máquina, a menos que você escolha um modelo
+hospedado.
+
+## Duas formas de usar [#duas-formas-de-usar]
+
+<Cards>
+  <Card title="Modo CLI: brok" href="/pt-br/docs/getting-started">
+    Em qualquer terminal e qualquer editor. `brok search`, `ask`, `chat`,
+    `review`, `commit`, skills e shards. Seus agentes de código ganham a
+    ferramenta `brok_search` via MCP.
+  </Card>
+  <Card title="Modo IDE: Brokspace IDE" href="/pt-br/docs/ide">
+    O mesmo workspace em uma IDE feita em torno dele: uma página inicial que
+    começa pela sua pergunta, o agente Brokspace no chat, busca, revisões e
+    mensagens de commit a um clique.
+  </Card>
+</Cards>
+
+Os dois compartilham a mesma pasta `.brokspace/`, então você pode alternar a
+qualquer momento.
+
+## O que você ganha [#o-que-você-ganha]
+
+- **Busca que entende código.** Funções, classes e seções são indexadas
+  inteiras e encontradas pelo significado ou pelo nome, em todos os
+  repositórios.
+- **Respostas com fontes.** Pergunte ao seu próprio LLM (Ollama, LM Studio ou
+  um modelo hospedado) sobre o workspace; toda resposta lista o código usado.
+- **Revisões e mensagens de commit** a partir das suas alterações preparadas
+  ou não commitadas.
+- **Skills:** 20 fluxos de trabalho para IA já incluídos (TDD, code review,
+  especificações...) e os seus próprios em um `SKILL.md`.
+- **Shards:** pequenos programas que reagem ao seu workspace por meio de um
+  barramento de eventos local e com permissões.
+
+## Comece [#comece]
+
+<Cards>
+  <Card title="Primeiros passos" href="/pt-br/docs/getting-started">
+    Instale, configure seu primeiro workspace e use no dia a dia: cerca de 15
+    minutos.
+  </Card>
+  <Card title="LLM local" href="/pt-br/docs/local-llm">
+    Escolha um modelo adequado à sua máquina e rode com Ollama ou LM Studio.
+  </Card>
+  <Card title="Skills" href="/pt-br/docs/skills">
+    Os fluxos de trabalho incluídos e como escrever e compartilhar os seus.
+  </Card>
+  <Card title="Shards" href="/pt-br/docs/shards">
+    Crie integrações que reagem ao seu workspace.
+  </Card>
+</Cards>
+
+O Brokspace é código aberto (MIT ou Apache-2.0). Perguntas e ideias vão para
+as [GitHub Discussions](https://github.com/brokspace/brok/discussions).
+
+
+# Integrations (/pt-br/docs/integrations)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/integrations.md by scripts/sync-docs.mjs. Edit it there. -->
+
+Brokspace stays small and plugs into the tools you already use.
+
+| Integration                                                   | How                                  | Setup               |
+| ------------------------------------------------------------- | ------------------------------------ | ------------------- |
+| Coding agents (Claude Code, Cursor, VS Code / Copilot, Codex) | MCP tools + skills                   | `brok setup agents` |
+| Local LLMs (Ollama, LM Studio)                                | OpenAI-compatible API                | `brok setup llm`    |
+| Hosted LLMs (Anthropic, DeepSeek, any OpenAI-compatible)      | `llm.providers` in `brok.yml`        | export the API key  |
+| Git and submodules                                            | change tracking, hot/cold partitions | automatic           |
+| Team storage (S3, R2, MinIO, Git LFS)                         | index mirroring                      | `brok setup sync`   |
+| Anything else                                                 | write a shard                        | `brok shard new`    |
+
+## Coding agents [#coding-agents]
+
+```sh
+brok setup agents            # detects your agents and asks which to connect
+brok setup agents -a claude -a cursor --yes
+```
+
+For each agent it does two things.
+
+**1. MCP server.** Registers `brok mcp` (a stdio
+[Model Context Protocol](https://modelcontextprotocol.io) server) so the
+agent gets two tools:
+
+| Tool          | What it does                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `brok_search` | Hybrid search over the local index; returns whole functions/classes with `path:start-end` |
+| `brok_status` | What is indexed and whether `brok run` is active                                          |
+
+| Agent             | File written                                  |
+| ----------------- | --------------------------------------------- |
+| Claude Code       | `.mcp.json` (`mcpServers.brokspace`)          |
+| Cursor            | `.cursor/mcp.json` (`mcpServers.brokspace`)   |
+| VS Code / Copilot | `.vscode/mcp.json` (`servers.brokspace`)      |
+| Codex             | prints the snippet for `~/.codex/config.toml` |
+
+Existing entries in those files are preserved; only `brokspace` is added or
+updated. When `brok run` is active, searches reuse its loaded model;
+otherwise `brok mcp` opens the index read-only on demand.
+
+**2. Skills.** Exports the [skills](/docs/skills) to `.claude/skills/` (Claude
+Code) and `.agents/skills/` (Codex, Cursor, Copilot and others), so `/ask-brok`,
+`/grill-me`, `tdd`, `code-review` and the rest are available in the agent.
+
+Commit the generated files to give your whole team the same setup. `brok`
+must be on `PATH` for agents to start `brok mcp`; `brok doctor` checks it.
+
+## Local and hosted LLMs [#local-and-hosted-llms]
+
+See [Local LLM setup](/docs/local-llm). Any OpenAI-compatible endpoint works:
+
+```yaml
+llm:
+  default: ollama
+  providers:
+    ollama: { base_url: http://localhost:11434/v1, model: qwen2.5-coder:7b }
+    company:
+      { base_url: https://llm.internal.example.com/v1, model: gpt-oss-20b, api_key_env: COMPANY_LLM_KEY }
+```
+
+## Editors and scripts: JSON output [#editors-and-scripts-json-output]
+
+Editors (the Brokspace IDE among them), scripts and CI read brok through
+`--json`. Shapes are stable within a minor version.
+
+| Command                                                                  | Output                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brok status --json`                                                     | One document: `version`, `initialized`, `root`, `daemon.running`, `backends`, `embeddings`, `llm` (`provider`, `model`, `base_url`), `index[]` (`tier`, `path`, `files`, `chunks`, `backend`, `semantic`), `shards[]` (`name`, `version`, `description`, `state`, `source`). Outside a workspace: `{"version": ..., "initialized": false}`. |
+| `brok search <query> --json`                                             | One document: `hits[]` with `path`, `start_line`, `end_line`, `kind`, `symbol`, `score`, `content`.                                                                                                                                                                                                                                         |
+| `brok skill list --json`                                                 | One array: `name`, `description`, `user_invoked`, `source`, `bucket` per skill.                                                                                                                                                                                                                                                             |
+| `brok ask ... --json`, `brok review --json`, `brok skill run ... --json` | A stream, one JSON event per line (see below).                                                                                                                                                                                                                                                                                              |
+
+Streaming events:
+
+```json
+{"type": "chunk", "text": "Refresh tokens rotate on every "}
+{"type": "chunk", "text": "use..."}
+{"type": "done", "provider": "ollama", "model": "qwen2.5-coder:7b",
+ "sources": [{"path": "src/auth/auth.service.ts", "start_line": 42, "end_line": 77, "symbol": "refresh"}]}
+```
+
+A failure ends the stream with a non-zero exit code and the message on
+stderr. Follow-up questions pass the conversation so far:
+`brok ask --json --history turns.json "and where is it tested?"`, where
+`turns.json` holds `[{"role": "user", "content": "..."}, {"role":
+"assistant", "content": "..."}]`.
+
+## Shards: integrations you build [#shards-integrations-you-build]
+
+When something is specific to your team (a ticketing system, a deploy
+pipeline, a compliance check), write a shard instead of waiting for a core
+feature: it reacts to workspace events and publishes its own. See
+[Shards](/docs/shards) and start with `brok shard new my-integration`.
+
+
+# Local LLM setup (/pt-br/docs/local-llm)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/local-llm.md by scripts/sync-docs.mjs. Edit it there. -->
+
+Brokspace answers questions (`brok ask`) and runs skills (`brok skill run`)
+with any OpenAI-compatible model. Running it locally keeps everything
+**free, private and offline**. Search and indexing never need an LLM.
+
+## The short version [#the-short-version]
+
+```sh
+brok setup llm      # also part of `brok init`
+```
+
+It:
+
+1. reads your RAM (and NVIDIA GPU memory) and picks a model size from the
+   table below;
+2. looks for a running **Ollama** (`localhost:11434`) or **LM Studio**
+   (`localhost:1234`) server;
+3. uses a model you already have, or offers to download the recommended one
+   (`ollama pull`);
+4. writes the choice to `.brokspace/brok.yml` (`llm.default`).
+
+Nothing installed yet? It prints the one-line install for your OS. Run it,
+then `brok setup llm` again. `brok doctor` tells you at any time whether the
+model is reachable.
+
+## What your machine can run [#what-your-machine-can-run]
+
+Sizes are for 4-bit quantized models (`Q4_K_M`), the best balance between
+speed and quality.
+
+| Model size                | Memory and GPU                                                 | Typical hardware                          | Recommended (Ollama)                              |
+| ------------------------- | -------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------- |
+| 1B to 3B                  | 8 GB                                                           | Office laptops, entry-level Macs          | `qwen2.5-coder:1.5b`, `llama3.2:3b`               |
+| 3B                        | 16 GB, no GPU                                                  | Business laptops with integrated graphics | `qwen2.5-coder:3b`, `llama3.2:3b`                 |
+| **7B to 9B** (sweet spot) | 16 GB with a GPU (6 GB+) or Apple Silicon; 32 GB without a GPU | Gaming laptops, M1/M2/M3 Macs, desktops   | `qwen2.5-coder:7b`, `llama3:8b`, `deepseek-r1:8b` |
+| 14B to 32B                | A GPU with 12 GB+, or 32 GB with a GPU or Apple Silicon        | Workstations, Mac Pro/Max with 32 GB+     | `qwen2.5-coder:14b`, `deepseek-r1:32b`            |
+
+Without a GPU the model runs on the processor: memory decides what fits,
+but speed decides what is pleasant. A laptop CPU reads a long prompt into a
+7B model at about 15 tokens per second, so a review takes 3 to 5 minutes;
+a 3B model is about twice as fast. That is why machines without a GPU get
+one size smaller. Only NVIDIA GPUs and Apple Silicon are detected; with
+another GPU that Ollama supports, pick the row for your GPU memory.
+
+What to expect: 1B to 3B models answer questions about your code well
+enough (`brok ask`, `brok chat`), but they lose track of longer skills, so
+`brok review`, `brok commit` and most `brok skill run` workflows are much
+better with 7B or larger. Even at 7B, a review is a first pass that can be
+wrong; 14B and hosted models (`brok review -p anthropic`) review much
+better, and commit messages are already good at 7B.
+
+`brok setup llm` applies exactly this table. Override it any time:
+
+```sh
+brok setup llm --provider ollama --model llama3:8b
+```
+
+## Option 1: Ollama (recommended, terminal friendly) [#option-1-ollama-recommended-terminal-friendly]
+
+| OS      | Install                                                                               |
+| ------- | ------------------------------------------------------------------------------------- |
+| Windows | `winget install Ollama.Ollama` or the installer from [ollama.com](https://ollama.com) |
+| macOS   | `brew install ollama` or the app from [ollama.com](https://ollama.com)                |
+| Linux   | `curl -fsSL https://ollama.com/install.sh \| sh`                                      |
+
+```sh
+ollama pull qwen2.5-coder:7b     # or let `brok setup llm` do it
+brok setup llm
+```
+
+## Option 2: LM Studio (graphical) [#option-2-lm-studio-graphical]
+
+1. Download it from [lmstudio.ai](https://lmstudio.ai) (Windows `.exe`,
+   macOS `.dmg` for Apple Silicon or Intel, Linux `.AppImage`:
+   `chmod +x LM_Studio-*.AppImage && ./LM_Studio-*.AppImage`).
+2. Search for `Qwen2.5-Coder-7B` (or the size from the table), pick a
+   `Q4_K_M` or `Q5_K_M` file and download it.
+3. Open the **Developer / Local Server** tab, load the model and press
+   **Start Server** (it listens on `http://localhost:1234`).
+4. Run `brok setup llm`: it finds the server and lets you pick the model.
+
+## Hosted models [#hosted-models]
+
+Prefer a hosted model for some questions? Export its key and choose it per
+request; the providers are preconfigured in `brok.yml`:
+
+```sh
+export ANTHROPIC_API_KEY=...        # PowerShell: $env:ANTHROPIC_API_KEY = "..."
+brok ask -p anthropic "explain the retry policy"
+```
+
+Keys are read from the environment, never stored in `brok.yml`, and secrets
+found in retrieved code are redacted before any prompt leaves your machine.
+
+## Using the same model elsewhere [#using-the-same-model-elsewhere]
+
+- **Aider**: `aider --model ollama/qwen2.5-coder:7b` inside your git
+  repository (`pip install aider-chat`, Python 3.10 to 3.12).
+- **Coding agents** (Claude Code, Cursor, VS Code, Codex): `brok setup agents`
+  gives them the Brokspace search tool and skills; see
+  [Integrations](/docs/integrations).
+
+## Performance tips [#performance-tips]
+
+- **Apple Silicon**: memory is unified, so a 16 GB Mac runs 7B/8B models fast.
+- **NVIDIA / AMD GPUs**: enable full GPU offload in LM Studio or Ollama.
+- **Storage**: keep models on an SSD; loading from a spinning disk is painfully slow.
+- **Smaller is often better** for interactive use: a fast 7B beats a slow
+  14B for everyday questions; switch per request with `-p`.
+
+
+# Shards (/pt-br/docs/shards)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/shards.md by scripts/sync-docs.mjs. Edit it there. -->
+
+Shards are small programs that react to workspace events. Each one is a
+separate process connected to the `brok run` event bus, restricted to the
+topics its manifest declares.
+
+The fastest way to write one is the
+[brok-shard-template](https://github.com/brokspace/brok-shard-template)
+repository; this page is the reference.
+
+## Lifecycle [#lifecycle]
+
+```sh
+brok shard new my-shard                  # project from brok-shard-template
+brok shard new my-skills --skills-only   # a skill shard: shard.json + skills/
+brok shard install ./my-shard            # local directory (development)
+brok shard install https://github.com/acme/brok-license-check --tag v1.0.0
+brok start                               # starts every enabled shard (or `brok restart`)
+brok bus tail 'license:*'                # watch what it publishes
+brok shard remove brok-license-check
+```
+
+To trigger your shard by hand, publish the event it listens to:
+`brok bus emit file:changed '{"changed":["src/main.rs"],"deleted":[]}'`.
+Windows PowerShell 5.1 drops the inner double quotes when it calls a
+program, so escape them there: `'{\"changed\":[\"src/main.rs\"],\"deleted\":[]}'`
+(PowerShell 7 and other shells need no escaping).
+
+Installing:
+
+1. clones the repository (`--depth 1`, optional `--tag`) or uses the local directory;
+2. validates `shard.json` and the `brok` version requirement;
+3. **shows the requested capabilities and asks for consent** (`--yes` to skip in scripts);
+4. obtains the executable, in order of preference:
+   - a release asset for this platform, verified against its SHA-256;
+   - the manifest's `build.command`, run in the repository;
+   - an `entrypoint` already present in the repository;
+5. moves it into `.brokspace/shards/<name>/` and records the source, commit and
+   binary hash in `shards.lock`.
+
+Disable a shard without removing it in `brok.yml`:
+
+```yaml
+shards:
+  brok-license-check:
+    enabled: false
+```
+
+## `shard.json` [#shardjson]
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/brokspace/brok-sdk/main/shard.schema.json",
+  "name": "brok-security-auditor",
+  "version": "1.0.0",
+  "description": "Flags risky changes in source files",
+  "license": "MIT",
+  "repository": "https://github.com/acme/brok-security-auditor",
+  "brok": ">=0.1.0, <0.2.0",
+  "entrypoint": "bin/security-auditor",
+  "args": [],
+  "runtime": "native",
+  "permissions": {
+    "filesystem": { "read": ["src/"], "write": [] },
+    "network": false,
+    "process": ["git"],
+    "env": ["SEMGREP_*"]
+  },
+  "subscribes_to": ["file:changed"],
+  "publishes_to": ["security:alert"],
+  "build": { "command": ["cargo", "build", "--release"], "artifact": "target/release/security-auditor" },
+  "releases": {
+    "linux-x86_64": { "url": "https://github.com/acme/…/security-auditor-linux-x86_64", "sha256": "…" },
+    "macos-aarch64": { "url": "https://github.com/acme/…/security-auditor-macos-aarch64", "sha256": "…" },
+    "windows-x86_64": {
+      "url": "https://github.com/acme/…/security-auditor-windows-x86_64.exe",
+      "sha256": "…"
+    }
+  }
+}
+```
+
+| Field                               | Required | Rules                                                                                                                              |
+| ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                              | ✓        | `^[a-z][a-z0-9-]{1,63}$`, unique in the workspace                                                                                  |
+| `version`                           | ✓        | SemVer                                                                                                                             |
+| `entrypoint`                        | ✓¹       | Relative path inside the shard directory; `.exe` is appended on Windows                                                            |
+| `skills`                            | ✓¹       | Directories whose subfolders each hold a `SKILL.md` ([skills](/docs/skills))                                                       |
+| `brok`                              |          | SemVer requirement on the runtime version                                                                                          |
+| `runtime`                           |          | `native` (default)                                                                                                                 |
+| `permissions.filesystem.read/write` |          | Workspace relative paths, no `..`, no absolute paths                                                                               |
+| `permissions.network`               |          | `false` by default                                                                                                                 |
+| `permissions.process`               |          | Bare program names the shard intends to run                                                                                        |
+| `permissions.env`                   |          | Variables to pass through: exact names, `PREFIX_*` or `*_SUFFIX`. `BROK_*` is reserved                                             |
+| `subscribes_to` / `publishes_to`    |          | Topic patterns; publishing to `system:*` (or `*`) is not allowed                                                                   |
+| `build.command`                     |          | Program + arguments, executed **without a shell**                                                                                  |
+| `releases.<os>-<arch>`              |          | `https://` URL and 64 hex SHA-256; keys use Rust's `std::env::consts` names (`linux-x86_64`, `macos-aarch64`, `windows-x86_64`, …) |
+
+¹ A shard needs an `entrypoint`, `skills`, or both. Skill-only shards run no
+process, so they cannot declare topics, `build` or `releases`.
+
+Unknown fields are rejected, and all violations are reported at once.
+
+## Topics [#topics]
+
+`namespace:name`, lowercase letters, digits, `-`, `_` and `.` for sub-topics:
+`file:changed`, `agent:ask.chunk`. Patterns are exact topics or a prefix
+ending in `*` (`agent:ask.*`, `file:*`, `*`). Pick a namespace named after
+your shard for your own events. The well-known topics and their payloads are
+listed in [Architecture](/docs/architecture#well-known-topics).
+
+## Runtime contract [#runtime-contract]
+
+`brok run` starts the entrypoint with:
+
+- working directory = workspace root;
+- an environment containing only OS basics (`PATH`, `HOME`, `TEMP`, …),
+  `RUST_LOG`, the variables allowed by `permissions.env`, and:
+
+| Variable                         | Value                              |
+| -------------------------------- | ---------------------------------- |
+| `BROK_ENDPOINT`                  | Socket path / pipe name of the bus |
+| `BROK_TOKEN`                     | The shard's session token (secret) |
+| `BROK_SHARD_NAME`                | Manifest name                      |
+| `BROK_WORKSPACE`                 | Absolute workspace root            |
+| `BROK_FS_READ` / `BROK_FS_WRITE` | Declared paths, `;`-separated      |
+| `BROK_NETWORK`                   | `1` or `0`                         |
+
+- stdout and stderr are captured line by line, prefixed with the shard name in
+  the `brok run` output and appended to `.brokspace/logs/<name>.log`. Log to
+  stderr.
+- On `system:shutdown` (delivered without subscribing), exit within 3 seconds.
+- A non-zero exit is a crash: the shard is restarted with backoff.
+
+## Using the SDK [#using-the-sdk]
+
+```rust
+use brok_sdk::prelude::*;
+
+#[tokio::main]
+async fn main() -> Result<(), ClientError> {
+    let (client, mut inbox) = BrokClient::connect_from_env("my-shard", env!("CARGO_PKG_VERSION")).await?;
+    client.subscribe([TopicPattern::new("file:changed")?]).await?;
+
+    while let Some(event) = inbox.recv().await {
+        if event.is::<Shutdown>() {
+            break;
+        }
+        if let Ok(change) = event.decode::<FileChanged>() {
+            for path in change.changed {
+                // … inspect the file, then publish your own event:
+                // client.emit(&MyFinding { path, … }).await?;
+            }
+        }
+    }
+    Ok(())
+}
+```
+
+- Typed payloads implement `brok_sdk::Payload` (a serde type plus its topic).
+- `client.request(event)` returns a stream of replies; `client.call::<Req,
+  Res>(&req, timeout)` waits for the first typed reply. Example: query the
+  index with `client.call::<SearchRequest, SearchResults>(…)` (add
+  `index:search` to `publishes_to`).
+- `client.reply(&request, &payload)` answers a request; only the requester
+  receives it.
+- `client.context()` returns the workspace root, your `shards.<name>.settings`
+  from `brok.yml` and the `llm` routing table.
+
+Shards do not have to be written in Rust: anything that can open a Unix
+socket / named pipe and exchange length-prefixed JSON frames works. The frame
+format is documented in `brok-sdk/src/frame.rs` and `codec.rs`.
+
+## Security [#security]
+
+What the runtime **enforces**: topic ACLs, `source` stamping, reply routing,
+the scrubbed environment, the working directory.
+
+What is **declared but not yet enforced by the OS**: file system and network
+access. Consent at install time is the safeguard until OS sandboxes (Landlock,
+Seatbelt, AppContainer) land. `build.command` runs arbitrary code from the
+shard repository (e.g. `build.rs`) — the consent prompt shows it before it
+runs. Prefer shards that publish checksum-pinned `releases`.
+
+
+# Skills (/pt-br/docs/skills)
+
+<!-- Generated from https://github.com/brokspace/brok/blob/main/docs/skills.md by scripts/sync-docs.mjs. Edit it there. -->
+
+A **skill** is a small, reusable workflow written for AI agents: a folder
+with a `SKILL.md` (YAML frontmatter `name` + `description`, then
+instructions) and optional reference files. Brokspace uses the same
+[Agent Skills](https://github.com/mattpocock/skills) format as Claude Code,
+Codex, Cursor and GitHub Copilot, so a skill written once works everywhere.
+
+```text
+code-review/
+├── SKILL.md            name, description, instructions
+├── agents/openai.yaml  display metadata for Codex (optional)
+└── CHECKLIST.md        reference material linked from SKILL.md (optional)
+```
+
+## Two kinds [#two-kinds]
+
+|               | User-invoked                                | Model-invoked                                |
+| ------------- | ------------------------------------------- | -------------------------------------------- |
+| Who starts it | Only you, by typing `/name`                 | You, or the agent when the task fits         |
+| Frontmatter   | `disable-model-invocation: true`            | (default)                                    |
+| Role          | Orchestrates a flow (`/to-spec`, `/triage`) | A reusable discipline (`tdd`, `code-review`) |
+| Description   | One human-facing line                       | Rich "Use when..." triggers                  |
+
+## Built-in skills [#built-in-skills]
+
+`brok` ships a curated set, embedded in the binary (source:
+[skills/](https://github.com/brokspace/brok/blob/main/skills/README.md)). They cover the whole development loop that
+Brokspace itself uses: align, specify, slice, build test-first, review, ship.
+
+```sh
+brok skill list          # everything available, with its source
+brok skill show tdd      # read one
+```
+
+Not sure where to start? Type `/ask-brok` in your coding agent and describe
+your situation.
+
+## Using skills [#using-skills]
+
+**In your coding agent** (the main way):
+
+```sh
+brok setup agents        # skills + MCP search tool, for the agents it detects
+brok skill export        # skills only; --agent claude|agents|cursor|vscode|codex, --global
+```
+
+Skills land in `.claude/skills/` and the portable `.agents/skills/` (read by
+Codex, Cursor, Copilot and others). Folders are marked `.brokspace-managed`
+and refreshed on every export; brok never overwrites a folder it did not
+create. Commit them to share with your team.
+
+**On your local LLM**, through `brok-agent` (needs `brok run`):
+
+```sh
+brok skill run code-review "the changes in src/api since main"
+brok skill run grill-me "plan: move sessions to redis"
+```
+
+The skill's instructions (and the reference files it links) become the
+system prompt; Brokspace adds relevant code from the index as context.
+
+## Writing your own [#writing-your-own]
+
+```sh
+brok skill new release-notes                  # model-invoked, in .brokspace/skills/
+brok skill new deploy --user-invoked          # a /deploy workflow only you trigger
+```
+
+Workspace skills in `.brokspace/skills/<name>/` **override** built-ins with
+the same name, so you can tailor any built-in to your team. Keep skills
+short and explicit: small local models follow them too. The built-in
+`write-skill` skill walks your agent through it.
+
+## Sharing skills: skill shards [#sharing-skills-skill-shards]
+
+A **skill shard** is a shard with no process, just skills. Publish it as a
+git repository and anyone can install it:
+
+```sh
+brok shard new acme-skills --skills-only      # shard.json + skills/example/
+# edit, push to GitHub, then on any machine:
+brok shard install https://github.com/acme/acme-skills
+brok skill list                               # source: shard:acme-skills
+```
+
+`shard.json` of a skill shard:
+
+```json
+{ "name": "acme-skills", "version": "0.1.0", "skills": ["skills"] }
+```
+
+A shard can also ship skills next to its process (`entrypoint` + `skills`).
+
+## Precedence [#precedence]
+
+When names collide, the first wins: workspace (`.brokspace/skills/`) >
+installed shards > built-in. `brok skill list` reports shadowed skills.
+
+## Credits [#credits]
+
+The built-in workflows are adapted from
+[mattpocock/skills](https://github.com/mattpocock/skills) (MIT); see
+[skills/CREDITS.md](https://github.com/brokspace/brok/blob/main/skills/CREDITS.md).

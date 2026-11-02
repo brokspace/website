@@ -1,0 +1,102 @@
+# Brokspace IDE (/docs/ide)
+
+Brokspace IDE is built on [Eclipse Theia](https://theia-ide.org), so VS
+Code extensions from [Open VSX](https://open-vsx.org) work in it. It ships
+with `brok` and `brok-agent`, and puts them on your `PATH`.
+
+![Brokspace IDE home](/images/ide-home.png)
+
+## Install [#install]
+
+<Tabs items={['macOS', 'Debian / Ubuntu', 'Linux (other)', 'Windows']}>
+  <Tab value="macOS">
+    ```sh
+    brew install --cask brokspace/tap/brokspace-ide
+    ```
+    The first launch needs right click > **Open** while the app is not
+    notarized yet.
+  </Tab>
+  <Tab value="Debian / Ubuntu">
+    ```sh
+    curl -fsSL https://brokspace.github.io/apt/brokspace-archive-keyring.gpg \
+      | sudo tee /usr/share/keyrings/brokspace-archive-keyring.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/brokspace-archive-keyring.gpg] https://brokspace.github.io/apt stable main" \
+      | sudo tee /etc/apt/sources.list.d/brokspace.list
+    sudo apt update && sudo apt install brokspace-ide
+    ```
+  </Tab>
+  <Tab value="Linux (other)">
+    Download the AppImage or the `.tar.gz` from the
+    [latest release](https://github.com/brokspace/ide/releases/latest).
+  </Tab>
+  <Tab value="Windows">
+    Download `BrokspaceIDE-<version>-windows-x64-setup.exe` from the
+    [latest release](https://github.com/brokspace/ide/releases/latest). Choose
+    **More info > Run anyway** in SmartScreen while the installer is not
+    signed yet.
+  </Tab>
+</Tabs>
+
+The IDE updates itself from GitHub Releases. For answers you need an LLM:
+see [Local LLM setup](/docs/local-llm) (search works without one).
+
+## Your first minutes [#your-first-minutes]
+
+The window starts minimal: Explorer, Search, Source Control and Brokspace on
+the left, the **Brokspace agent** docked on the right. Debug, Testing and
+Extensions stay one shortcut away.
+
+1. **Open a folder** (File > Open Folder). If it has no Brokspace workspace
+   yet, the Brokspace view offers **Set Up Workspace**: it runs `brok init`
+   for you.
+2. **Ask.** Type a question on the home page or in the agent panel: the
+   Brokspace agent answers from your LLM with the sources it used; click a
+   source to open the file at that line. Follow-up questions keep the
+   conversation. Press `Ctrl+Shift+A` (`Cmd+Shift+A` on macOS) for **agent
+   focus mode**, where the agent takes most of the window.
+3. **Search.** The Brokspace view (the folded "B" in the activity bar) finds
+   code by meaning or by name; click a result to open it.
+4. **Review and commit.** Type `/review` in the chat (or `/review staged`,
+   `/review base main`). In Source Control, the ✨ button writes the commit
+   message from the staged changes.
+
+## The Brokspace view [#the-brokspace-view]
+
+| Section | What it shows |
+|---|---|
+| **Overview** | Whether Brokspace is running, the model, the index, search, and Ask / Review / Commit |
+| **Shards** | Each installed shard and its state; expand one to see what it reads and writes, whether it uses the network, the programs it runs, the events it listens to and publishes, and where it came from. Install, create or remove shards from the toolbar |
+| **Skills** | Workflows you run and the skills your agents use; click to run one |
+
+## The Brokspace agent [#the-brokspace-agent]
+
+Every request goes through `brok`, which sends it to the LLM set in
+`.brokspace/brok.yml` (Ollama, LM Studio or a hosted OpenAI-compatible API).
+Without an LLM, or when it does not answer, the agent replies with what the
+local index found, as links.
+
+| Type | It runs |
+|---|---|
+| A question | `brok ask` with the conversation so far |
+| `/review` | A review of your uncommitted changes |
+| `/review staged` | A review of the staged changes |
+| `/review base <ref>` | A review of this branch against `<ref>` |
+| `/skill <name> <input>` | A skill on your LLM, e.g. `/skill tdd add a priority field` |
+
+## Commands and languages [#commands-and-languages]
+
+Everything is also in the **Brokspace** menu and the command palette:
+Set Up Workspace, Start / Stop / Restart, Rebuild Index, Doctor, Install,
+Create and Remove Shard, Export Skills to Coding Agents, Run Skill, Review,
+Write Commit Message. The status bar shows whether Brokspace is running and
+which model it uses.
+
+The IDE is in English and Brazilian Portuguese. It starts in Portuguese on a
+Portuguese system; switch with **Language** on the home page.
+
+## How it works [#how-it-works]
+
+The IDE talks to Brokspace only through the `brok` CLI and its JSON output
+(see [Integrations](/docs/integrations)), so it shows exactly what `brok`
+sees, and anything it does you can also do in a terminal. It needs brok
+0.2.4 or newer; the one it ships with qualifies.

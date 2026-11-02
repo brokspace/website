@@ -1,0 +1,45 @@
+# Brokspace
+
+
+- **Start**
+- [Introduction](/docs): Brokspace makes any development workspace searchable and agent-ready, on your machine.
+- [Getting started with Brokspace](/docs/getting-started): From zero to a productive workspace in about 15 minutes.
+
+- **Guides**
+- [Local LLM setup](/docs/local-llm): Brokspace answers questions (brok ask) and runs skills (brok skill run) with any OpenAI-compatible model.
+- [Skills](/docs/skills): A skill is a small, reusable workflow written for AI agents: a folder with a SKILL.md (YAML frontmatter name + description, then instructions) and optional reference files.
+- [Shards](/docs/shards): Shards are small programs that react to workspace events.
+- [Integrations](/docs/integrations): Brokspace stays small and plugs into the tools you already use.
+
+- **Brokspace IDE**
+- [Brokspace IDE](/docs/ide): An IDE with Brokspace built in, for IDE mode next to the brok CLI.
+
+- **Ecosystem**
+- [Shard Hub (preview)](/docs/hub): The official home of shards, skills and agents for Brokspace.
+
+- **Reference**
+- [Configuration reference](/docs/configuration): Changes take effect on the next command (or after restarting brok run).
+- [Architecture](/docs/architecture): This document explains how the pieces of Brokspace fit together.
+
+# Brokspace
+
+
+- **Início**
+- [Introdução](/pt-br/docs): O Brokspace deixa qualquer workspace de desenvolvimento pesquisável e pronto para agentes, na sua máquina.
+- [Getting started with Brokspace](/pt-br/docs/getting-started): From zero to a productive workspace in about 15 minutes.
+
+- **Guias**
+- [Local LLM setup](/pt-br/docs/local-llm): Brokspace answers questions (brok ask) and runs skills (brok skill run) with any OpenAI-compatible model.
+- [Skills](/pt-br/docs/skills): A skill is a small, reusable workflow written for AI agents: a folder with a SKILL.md (YAML frontmatter name + description, then instructions) and optional reference files.
+- [Shards](/pt-br/docs/shards): Shards are small programs that react to workspace events.
+- [Integrations](/pt-br/docs/integrations): Brokspace stays small and plugs into the tools you already use.
+
+- **Brokspace IDE**
+- [Brokspace IDE](/pt-br/docs/ide): Uma IDE com o Brokspace embutido, para o modo IDE ao lado da CLI brok.
+
+- **Ecossistema**
+- [Shard Hub (prévia)](/pt-br/docs/hub): A casa oficial de shards, skills e agentes para o Brokspace.
+
+- **Referência**
+- [Configuration reference](/pt-br/docs/configuration): Changes take effect on the next command (or after restarting brok run).
+- [Architecture](/pt-br/docs/architecture): This document explains how the pieces of Brokspace fit together.

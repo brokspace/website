@@ -1,0 +1,1 @@
+var e=`/assets/ide-home-DZy3vEb3.png`;export{e as t};

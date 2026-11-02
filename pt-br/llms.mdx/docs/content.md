@@ -1,0 +1,60 @@
+# Introdução (/pt-br/docs)
+
+O Brokspace (`brok`) indexa seu código (um repositório, seus submódulos ou
+uma pasta inteira de repositórios) em um mecanismo de busca híbrido local,
+conecta esse índice ao LLM que você escolher e o liga aos agentes de código
+que você já usa. Nada sai da sua máquina, a menos que você escolha um modelo
+hospedado.
+
+## Duas formas de usar [#duas-formas-de-usar]
+
+<Cards>
+  <Card title="Modo CLI: brok" href="/pt-br/docs/getting-started">
+    Em qualquer terminal e qualquer editor. `brok search`, `ask`, `chat`,
+    `review`, `commit`, skills e shards. Seus agentes de código ganham a
+    ferramenta `brok_search` via MCP.
+  </Card>
+  <Card title="Modo IDE: Brokspace IDE" href="/pt-br/docs/ide">
+    O mesmo workspace em uma IDE feita em torno dele: uma página inicial que
+    começa pela sua pergunta, o agente Brokspace no chat, busca, revisões e
+    mensagens de commit a um clique.
+  </Card>
+</Cards>
+
+Os dois compartilham a mesma pasta `.brokspace/`, então você pode alternar a
+qualquer momento.
+
+## O que você ganha [#o-que-você-ganha]
+
+- **Busca que entende código.** Funções, classes e seções são indexadas
+  inteiras e encontradas pelo significado ou pelo nome, em todos os
+  repositórios.
+- **Respostas com fontes.** Pergunte ao seu próprio LLM (Ollama, LM Studio ou
+  um modelo hospedado) sobre o workspace; toda resposta lista o código usado.
+- **Revisões e mensagens de commit** a partir das suas alterações preparadas
+  ou não commitadas.
+- **Skills:** 20 fluxos de trabalho para IA já incluídos (TDD, code review,
+  especificações...) e os seus próprios em um `SKILL.md`.
+- **Shards:** pequenos programas que reagem ao seu workspace por meio de um
+  barramento de eventos local e com permissões.
+
+## Comece [#comece]
+
+<Cards>
+  <Card title="Primeiros passos" href="/pt-br/docs/getting-started">
+    Instale, configure seu primeiro workspace e use no dia a dia: cerca de 15
+    minutos.
+  </Card>
+  <Card title="LLM local" href="/pt-br/docs/local-llm">
+    Escolha um modelo adequado à sua máquina e rode com Ollama ou LM Studio.
+  </Card>
+  <Card title="Skills" href="/pt-br/docs/skills">
+    Os fluxos de trabalho incluídos e como escrever e compartilhar os seus.
+  </Card>
+  <Card title="Shards" href="/pt-br/docs/shards">
+    Crie integrações que reagem ao seu workspace.
+  </Card>
+</Cards>
+
+O Brokspace é código aberto (MIT ou Apache-2.0). Perguntas e ideias vão para
+as [GitHub Discussions](https://github.com/brokspace/brok/discussions).

@@ -1,0 +1,55 @@
+# Introduction (/docs)
+
+Brokspace (`brok`) indexes your code (one repository, its submodules, or a
+whole folder of repositories) into a local hybrid search engine, connects it
+to the LLM you choose, and plugs it into the coding agents you already use.
+Nothing leaves your machine unless you choose a hosted model.
+
+## Two ways to use it [#two-ways-to-use-it]
+
+<Cards>
+  <Card title="CLI mode: brok" href="/docs/getting-started">
+    In any terminal and any editor. `brok search`, `ask`, `chat`, `review`,
+    `commit`, skills and shards. Your coding agents get the `brok_search`
+    tool through MCP.
+  </Card>
+  <Card title="IDE mode: Brokspace IDE" href="/docs/ide">
+    The same workspace in an IDE built around it: a home page that starts
+    with your question, the Brokspace agent in the chat, search, reviews and
+    commit messages one click away.
+  </Card>
+</Cards>
+
+Both share the same `.brokspace/` folder, so you can switch at any time.
+
+## What you get [#what-you-get]
+
+- **Search that understands code.** Functions, classes and sections are
+  indexed whole, found by meaning or by name, across every repository.
+- **Answers with sources.** Ask your own LLM (Ollama, LM Studio, or a hosted
+  model) about the workspace; every answer lists the code it used.
+- **Reviews and commit messages** from your staged or uncommitted changes.
+- **Skills:** 20 built-in workflows for AI (TDD, code review, specs...), and
+  your own in a `SKILL.md`.
+- **Shards:** small programs that react to your workspace through a local,
+  permissioned event bus.
+
+## Start [#start]
+
+<Cards>
+  <Card title="Getting started" href="/docs/getting-started">
+    Install, set up your first workspace, use it every day: about 15 minutes.
+  </Card>
+  <Card title="Local LLM" href="/docs/local-llm">
+    Pick a model that fits your machine and run it with Ollama or LM Studio.
+  </Card>
+  <Card title="Skills" href="/docs/skills">
+    The built-in workflows, and how to write and share your own.
+  </Card>
+  <Card title="Shards" href="/docs/shards">
+    Build integrations that react to your workspace.
+  </Card>
+</Cards>
+
+Brokspace is open source (MIT or Apache-2.0). Questions and ideas go to
+[GitHub Discussions](https://github.com/brokspace/brok/discussions).
