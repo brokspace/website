@@ -1,11 +1,11 @@
 import { createFromSource } from 'fumadocs-core/search/server';
 import { source } from '@/lib/source';
-import type { Route } from './+types/search';
 
-// The default multilingual tokenizer covers English and Portuguese; results
-// follow the `locale` the search dialog sends.
+// The site is served as static files (see README, Deploy), so search is a
+// prerendered index the browser downloads once and searches locally. The
+// default multilingual tokenizer covers English and Portuguese.
 const server = createFromSource(source);
 
-export async function loader({ request }: Route.LoaderArgs) {
-  return server.GET(request);
+export async function loader() {
+  return server.staticGET();
 }
