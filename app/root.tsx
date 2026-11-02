@@ -47,6 +47,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <body className="flex flex-col min-h-screen">
         <RootProvider
           theme={{ defaultTheme: 'dark' }}
+          // A prerendered index searched in the browser: the site is static files.
+          search={{ options: { type: 'static' } }}
           i18n={{
             locale: lang,
             locales,
