@@ -86,14 +86,14 @@ prerendered, so it stays fast).
    repository** and authorize GitHub. Pick `brokspace/website`, branch `main`.
 2. Check the build settings Hostinger detects, and set them to:
 
-   | Setting          | Value                                       |
-   | ---------------- | ------------------------------------------- |
-   | Application type | `react-router`                              |
-   | Node.js version  | 22 or 24                                    |
-   | Root directory   | `/`                                         |
-   | Package manager  | pnpm                                        |
-   | Build script     | `build`                                     |
-   | Output directory | `build`                                     |
+   | Setting          | Value                                        |
+   | ---------------- | -------------------------------------------- |
+   | Application type | `react-router`                               |
+   | Node.js version  | 22 or 24                                     |
+   | Root directory   | `/`                                          |
+   | Package manager  | pnpm                                         |
+   | Build script     | `build`                                      |
+   | Output directory | `build`                                      |
    | Entry file       | `server.js` (relative to the root directory) |
 
    **The entry file is required.** Without it Hostinger deploys React Router
