@@ -1,4 +1,4 @@
-import { glob } from 'node:fs/promises';
+import { glob, mkdir, writeFile } from 'node:fs/promises';
 import type { Config } from '@react-router/dev/config';
 import { createGetUrl, getSlugs } from 'fumadocs-core/source';
 import { i18n } from './app/lib/i18n';
@@ -9,6 +9,11 @@ const getUrl = createGetUrl('/docs', i18n);
 // Every page, the search index, OG images and Markdown copies are prerendered
 // into build/client: that folder is the whole site, served as static files by
 // Hostinger (README, Deploy).
+//
+// React Router prerenders by fetching each path from a local preview server,
+// and Hostinger's build refuses local connections (ECONNREFUSED 127.0.0.1).
+// So this only lists the paths, in build/prerender-paths.json, and returns
+// none: scripts/prerender.mjs renders them in process after the build.
 export default {
   ssr: true,
   // Static hosting has no server to answer lazy route discovery (/__manifest):
@@ -37,6 +42,8 @@ export default {
       }
     }
 
-    return paths;
+    await mkdir('build', { recursive: true });
+    await writeFile('build/prerender-paths.json', JSON.stringify(paths));
+    return [];
   },
 } satisfies Config;
