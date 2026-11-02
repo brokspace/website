@@ -10,14 +10,14 @@ prerendered at build time), [Vite](https://vite.dev),
 
 ## Develop
 
-Needs Node.js 22+ and pnpm (`corepack enable`).
+Needs Node.js 24 (LTS, version in `.nvmrc`) and pnpm (`corepack enable`).
 
 ```sh
 pnpm install
 pnpm dev            # http://localhost:5173
 pnpm lint           # Biome
 pnpm types:check
-pnpm build && pnpm start   # production build, http://localhost:3000
+pnpm build && pnpm start   # production build (build/client), http://localhost:4173
 ```
 
 ## Where things are
@@ -76,38 +76,37 @@ the same page.
 
 ## Deploy to Hostinger
 
-brokspace.org runs as a **Node.js web app** that Hostinger builds from the
-`main` branch (the release branch) and runs with `server.js`, the same server
-as `pnpm start`.
+brokspace.org is a **Vite web app** on Hostinger: it builds the `main` branch
+(the release branch) and serves `build/client` as static files from
+`public_html`. No Node.js process runs: every page, the search index, the OG
+images and the Markdown copies are prerendered, and `public/.htaccess` adds
+the redirects, the 404 page and the headers.
 
 ### Settings (hPanel > Websites > brokspace.org > Node.js app > Settings)
 
-| Setting               | Value                                                  |
-| --------------------- | ------------------------------------------------------ |
-| Branch                | `main`                                                 |
-| Application type      | **Express** (or **React Router**, if listed), not Vite |
-| Node.js version       | 22                                                     |
-| Root directory        | `/`                                                    |
-| Package manager       | pnpm                                                   |
-| Build script          | `build`                                                |
-| Output directory      | `build`                                                |
-| Entry file            | `server.js`                                            |
-| Environment variables | `BROKSPACE_PRERENDER=false`                            |
+| Setting               | Value                 |
+| --------------------- | --------------------- |
+| Branch                | `main`                |
+| Application type      | **Vite**              |
+| Node.js version       | 24.x                  |
+| Root directory        | `/`                   |
+| Package manager       | pnpm                  |
+| Build script          | `build`               |
+| Output directory      | `build/client`        |
+| Entry file            | empty                 |
+| Environment variables | none (optional below) |
 
-- **The type and the entry file matter most.** Hostinger detects this
-  project as Vite, a static type: it then serves the build folder as files and
-  never starts `server.js`, and brokspace.org answers `403 Forbidden`.
-- **Output directory `build`.** Hostinger keeps only the sources,
-  `node_modules` and the output directory from its build. Left empty, the
-  build is dropped and every page fails (`build/server/index.js` is missing
-  in the app's log).
-- `BROKSPACE_PRERENDER=false` skips prerendering, which cannot reach its local
-  server inside Hostinger's build (`ECONNREFUSED ::1`). The server renders
-  every page on request.
-- pnpm is pinned to 10 (`packageManager`): Hostinger's Node 22 corepack cannot
-  start pnpm 11 or newer.
+- **Output directory `build/client`**, not `build`: `build` holds `client/`
+  and `server/` but no `index.html`, and brokspace.org answers
+  `403 Forbidden`.
+- The build prerenders through a local preview server bound to `127.0.0.1`
+  (`vite.config.ts`); where `localhost` resolves to `::1` first, as on
+  Hostinger, it otherwise fails with `ECONNREFUSED ::1`.
+- pnpm is pinned to 10 (`packageManager`), which Hostinger's corepack can
+  start (it cannot start pnpm 12).
 - Optional: `GITHUB_TOKEN`, a fine-grained token with no permissions (public
-  data only), raises the GitHub API limit for the stars count.
+  data only), raises the GitHub API limit for the stars count, read at build
+  time.
 
 After **Save and redeploy**, check https://brokspace.org, `/pt-br`, `/docs`, a
 search (Ctrl+K) and `/install.sh` (it should download the script). The domain
@@ -117,15 +116,8 @@ and SSL are set in the same app (**Domains**); add `www.brokspace.org` too.
 
 Changes go to `staging` through pull requests. Merging the release PR
 ("release: promote staging to main") updates `main`, and Hostinger rebuilds
-and redeploys the app (auto-deploy on). To publish new CLI docs:
+and redeploys the site (auto-deploy on). To publish new CLI docs:
 `pnpm sync-docs`, commit, open a PR.
-
-### Static hosting
-
-The build can also run without a server: with prerendering on (the default),
-`build/client` is the complete site (pages, search index, 404 page, Markdown
-copies), and `public/.htaccess` adds the redirects and headers on Apache or
-LiteSpeed.
 
 ## License
 

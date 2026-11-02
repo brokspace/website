@@ -1,6 +1,6 @@
 # brokspace.org on Hostinger (LiteSpeed, Apache compatible). Vite copies this
-# file to build/client, which CI publishes to the `hostinger` branch and
-# Hostinger serves from public_html (README, Deploy): HTTPS and apex
+# file to build/client, which Hostinger's Vite app serves from public_html
+# (README, Deploy): HTTPS and apex
 # redirects, directory indexes, the 404 page, the install script redirects,
 # Markdown for LLMs, security headers and caching.
 
@@ -72,7 +72,7 @@ ErrorDocument 404 /404/index.html
   AddOutputFilterByType DEFLATE text/html text/css text/plain text/markdown text/x-script text/xml application/javascript application/json application/xml image/svg+xml
 </IfModule>
 
-# Nothing in the deploy branch except the site should be served.
+# Nothing but the site should be served.
 <FilesMatch "^(\.git.*|DEPLOY\.md)$">
   Require all denied
 </FilesMatch>
