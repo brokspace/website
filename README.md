@@ -99,9 +99,9 @@ the redirects, the 404 page and the headers.
 - **Output directory `build/client`**, not `build`: `build` holds `client/`
   and `server/` but no `index.html`, and brokspace.org answers
   `403 Forbidden`.
-- The build prerenders through a local preview server bound to `127.0.0.1`
-  (`vite.config.ts`); where `localhost` resolves to `::1` first, as on
-  Hostinger, it otherwise fails with `ECONNREFUSED ::1`.
+- The build prerenders every page in process (`scripts/prerender.mjs`):
+  React Router's own prerender fetches pages from a local server, which
+  Hostinger's build refuses (`ECONNREFUSED 127.0.0.1`).
 - pnpm is pinned to 10 (`packageManager`), which Hostinger's corepack can
   start (it cannot start pnpm 12).
 - Optional: `GITHUB_TOKEN`, a fine-grained token with no permissions (public
