@@ -76,51 +76,52 @@ the same page.
 
 ## Deploy to Hostinger
 
-brokspace.org is **static files**: every page, the search index, Open Graph
-images and the Markdown copies are prerendered into `build/client` at build
-time, and `public/.htaccess` (copied there) does the rest on Hostinger's
-LiteSpeed server: HTTPS and `www` redirects, `/route` to `/route/`, the 404
-page, `/install.sh` and `/install.ps1` redirects, `/docs/<page>.md`, security
-headers and caching. Nothing builds or runs on Hostinger.
+brokspace.org runs as a **Node.js web app** that Hostinger builds from the
+`main` branch (the release branch) and runs with `server.js`, the same server
+as `pnpm start`.
 
-CI builds the site on every push to `main` (the release branch) and, when the
-build and checks pass, commits `build/client` to the **`hostinger`** branch
-(job `publish-hostinger` in `.github/workflows/ci.yml`). Hostinger pulls that
-branch into `public_html`.
+### Settings (hPanel > Websites > brokspace.org > Node.js app > Settings)
 
-### One-time setup in hPanel
+| Setting               | Value                                                  |
+| --------------------- | ------------------------------------------------------ |
+| Branch                | `main`                                                 |
+| Application type      | **Express** (or **React Router**, if listed), not Vite |
+| Node.js version       | 22                                                     |
+| Root directory        | `/`                                                    |
+| Package manager       | pnpm                                                   |
+| Build script          | `build`                                                |
+| Output directory      | empty for Express, `build` for React Router            |
+| Entry file            | `server.js`                                            |
+| Environment variables | `BROKSPACE_PRERENDER=false`                            |
 
-1. If brokspace.org was created as a **Node.js app**, delete that app first
-   (**Websites > brokspace.org > Node.js**), so it stops answering for the
-   domain. A Node.js app of type Vite serves `build/` as a static folder
-   without an `index.html` at its root, which is the `403 Forbidden`.
-2. **Websites > brokspace.org > Advanced > GIT**: empty `public_html` first
-   (File Manager; the first deployment needs an empty directory), then add
-   repository `https://github.com/brokspace/website.git`, branch
-   `hostinger`, install path left empty (that is `public_html`). Create, then
-   **Deploy** once.
-3. Turn on **auto deployment** and copy the webhook URL hPanel shows. Add it to
-   this repository under **Settings > Webhooks** (content type
-   `application/json`, just the push event). Every new commit on `hostinger`
-   then deploys by itself.
-4. **SSL**: enable the free certificate for `brokspace.org` and
-   `www.brokspace.org`.
-5. Check https://brokspace.org, `/pt-br`, `/docs`, a search (Ctrl+K) and
-   `/install.sh` (it should download the script).
+- **The type and the entry file matter most.** Hostinger detects this
+  project as Vite, a static type: it then serves the build folder as files and
+  never starts `server.js`, and brokspace.org answers `403 Forbidden`.
+- `BROKSPACE_PRERENDER=false` skips prerendering, which cannot reach its local
+  server inside Hostinger's build (`ECONNREFUSED ::1`). The server renders
+  every page on request.
+- pnpm is pinned to 10 (`packageManager`): Hostinger's Node 22 corepack cannot
+  start pnpm 11 or newer.
+- Optional: `GITHUB_TOKEN`, a fine-grained token with no permissions (public
+  data only), raises the GitHub API limit for the stars count.
+
+After **Save and redeploy**, check https://brokspace.org, `/pt-br`, `/docs`, a
+search (Ctrl+K) and `/install.sh` (it should download the script). The domain
+and SSL are set in the same app (**Domains**); add `www.brokspace.org` too.
 
 ### Updates
 
-Changes go to `staging` through pull requests; merging the release PR
-("release: promote staging to main") runs CI on `main`, which publishes to
-`hostinger`, which Hostinger deploys. To publish new CLI docs:
-`pnpm sync-docs`, commit, open a PR. To roll back, revert the change on `main`.
+Changes go to `staging` through pull requests. Merging the release PR
+("release: promote staging to main") updates `main`, and Hostinger rebuilds
+and redeploys the app (auto-deploy on). To publish new CLI docs:
+`pnpm sync-docs`, commit, open a PR.
 
-### Running it as a server instead
+### Static hosting
 
-`pnpm build && pnpm start` (or `node server.js`, which serves on `$PORT`)
-runs the same site with server rendering, for hosts that run Node.js. There
-`BROKSPACE_PRERENDER=false` skips prerendering if the build host cannot reach
-its own local server.
+The build can also run without a server: with prerendering on (the default),
+`build/client` is the complete site (pages, search index, 404 page, Markdown
+copies), and `public/.htaccess` adds the redirects and headers on Apache or
+LiteSpeed.
 
 ## License
 
