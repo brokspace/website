@@ -6,8 +6,9 @@
 // hands the app its socket by intercepting listen(); react-router-serve first
 // probes for a free port with a throwaway listen when PORT is unset, and the
 // real server then never gets requests (503).
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import compression from 'compression';
 import express from 'express';
 
@@ -15,14 +16,26 @@ import express from 'express';
 process.env.NODE_ENV ??= 'production';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const client = join(root, 'build', 'client');
+
+// Hostinger builds the app, then keeps only the sources, node_modules and the
+// output directory: build/ survives only with Output directory `build`
+// (README, Deploy). Also accept its contents copied to the root.
+const output = [join(root, 'build'), root].find((dir) => existsSync(join(dir, 'server', 'index.js')));
+if (!output) {
+  console.error(
+    `[brokspace.org] build/server/index.js is missing: run \`pnpm build\` first. On Hostinger, set the Output directory to \`build\`. Files in ${root}: ${readdirSync(root).join(', ')}`,
+  );
+}
+const client = join(output ?? join(root, 'build'), 'client');
 
 // Load the build now: if it cannot load, the reason is in the app's log at
 // start, not only behind a 500 on the first request.
-const build = () => import('./build/server/index.js');
-build().catch((error) => {
-  console.error('[brokspace.org] the server build failed to load:', error);
-});
+const build = () => import(pathToFileURL(join(output ?? join(root, 'build'), 'server', 'index.js')).href);
+if (output) {
+  build().catch((error) => {
+    console.error('[brokspace.org] the server build failed to load:', error);
+  });
+}
 
 import('@react-router/express').then(({ createRequestHandler }) => {
   const app = express();

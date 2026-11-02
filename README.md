@@ -90,13 +90,17 @@ as `pnpm start`.
 | Root directory        | `/`                                                    |
 | Package manager       | pnpm                                                   |
 | Build script          | `build`                                                |
-| Output directory      | empty for Express, `build` for React Router            |
+| Output directory      | `build`                                                |
 | Entry file            | `server.js`                                            |
 | Environment variables | `BROKSPACE_PRERENDER=false`                            |
 
 - **The type and the entry file matter most.** Hostinger detects this
   project as Vite, a static type: it then serves the build folder as files and
   never starts `server.js`, and brokspace.org answers `403 Forbidden`.
+- **Output directory `build`.** Hostinger keeps only the sources,
+  `node_modules` and the output directory from its build. Left empty, the
+  build is dropped and every page fails (`build/server/index.js` is missing
+  in the app's log).
 - `BROKSPACE_PRERENDER=false` skips prerendering, which cannot reach its local
   server inside Hostinger's build (`ECONNREFUSED ::1`). The server renders
   every page on request.
