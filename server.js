@@ -17,6 +17,13 @@ process.env.NODE_ENV ??= 'production';
 const root = dirname(fileURLToPath(import.meta.url));
 const client = join(root, 'build', 'client');
 
+// Load the build now: if it cannot load, the reason is in the app's log at
+// start, not only behind a 500 on the first request.
+const build = () => import('./build/server/index.js');
+build().catch((error) => {
+  console.error('[brokspace.org] the server build failed to load:', error);
+});
+
 import('@react-router/express').then(({ createRequestHandler }) => {
   const app = express();
   app.disable('x-powered-by');
@@ -24,13 +31,12 @@ import('@react-router/express').then(({ createRequestHandler }) => {
   // Hashed build assets never change.
   app.use('/assets', express.static(join(client, 'assets'), { immutable: true, maxAge: '1y' }));
   app.use(express.static(client, { maxAge: '1h' }));
-  app.all(
-    '/{*splat}',
-    createRequestHandler({
-      build: () => import('./build/server/index.js'),
-      mode: process.env.NODE_ENV,
-    }),
-  );
+  app.all('/{*splat}', createRequestHandler({ build, mode: process.env.NODE_ENV }));
+  // Every failure in the app's log, with the request that hit it.
+  app.use((error, req, res, _next) => {
+    console.error(`[brokspace.org] ${req.method} ${req.originalUrl} failed:`, error);
+    res.status(500).type('text/plain').send('Internal Server Error');
+  });
 
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
