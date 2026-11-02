@@ -8,6 +8,7 @@
     "local-llm",
     "skills",
     "shards",
+    "memory",
     "integrations",
     "---Brokspace IDE---",
     "ide",

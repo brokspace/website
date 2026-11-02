@@ -71,8 +71,39 @@ Extensões ficam a um atalho de distância.
 | Seção | O que mostra |
 |---|---|
 | **Visão Geral** | Se o Brokspace está rodando, o modelo, o índice, a busca e Perguntar / Revisar / Commit |
+| **Memória** | As últimas decisões, fatos, notas e sessões de chat; clique em uma para abri-la. **+** lembra algo novo (`Ctrl+Alt+M`, ou selecione código antes para lembrá-lo junto com onde está) |
 | **Shards** | Cada shard instalado e seu estado; expanda um para ver o que ele lê e escreve, se usa a rede, os programas que executa, os eventos que escuta e publica, e de onde veio. Instale, crie ou remova shards pela barra de ferramentas |
 | **Skills** | Fluxos de trabalho que você executa e as skills que seus agentes usam; clique para executar |
+
+## Configurações do Brokspace
+
+Abra **Brokspace: Configurações** (`Ctrl+Alt+,`, ou a engrenagem na visão
+Brokspace) para ter numa página só tudo o que o Brokspace faz neste
+workspace:
+
+| Seção | O que você pode fazer |
+|---|---|
+| **Visão geral** | O serviço, o modelo, o índice, as memórias e os vínculos num relance; iniciar, parar ou reiniciar; abrir o `brok.yml` |
+| **Modelo de IA** | Escolher o provedor padrão, trocar modelo e URL, adicionar um provedor compatível com OpenAI (as chaves de API ficam em variáveis de ambiente) |
+| **Busca e índice** | Busca por significado ligada ou desligada, resultados por busca, pesos de ordenação, arquivos a ignorar |
+| **Memória** | Ligar ou desligar a memória e as sessões de chat, navegar e filtrar memórias por escopo, adicionar ou esquecer uma |
+| **Workspaces vinculados** | Vincular uma pasta ou um repositório git do qual este workspace depende, ver se está indexado, sincronizar ou desvincular |
+| **Agentes de código** | Conectar Claude Code, Cursor, VS Code / Copilot e Codex; exportar skills |
+| **Diagnóstico** | Versões, partições, Diagnóstico e logs |
+
+Toda alteração passa pelo `brok config`: ela é verificada antes de ser salva
+no `brok.yml`, e a página oferece reiniciar o Brokspace quando ele está
+rodando.
+
+## Memória e workspaces vinculados
+
+O Brokspace lembra entre sessões: cada chat com o agente é salvo como uma
+memória de sessão, e as decisões e os fatos que você (ou seus agentes de
+código) salvam aparecem em todas as respostas. As memórias são privadas,
+compartilhadas com o seu time pelo git ou globais para todos os seus
+workspaces. Workspaces vinculados, como o serviço `checkout` que o seu
+serviço `user` chama, são buscados junto com o seu, e os resultados abrem na
+IDE. Veja [Memória e workspaces vinculados](/pt-br/docs/memory).
 
 ## O agente Brokspace
 
@@ -91,9 +122,10 @@ o índice local encontrou, em forma de links.
 
 ## Comandos e idiomas
 
-Tudo também está no menu **Brokspace** e na paleta de comandos: Configurar
-Workspace, Iniciar / Parar / Reiniciar, Reconstruir Índice, Diagnóstico,
-Instalar, Criar e Remover Shard, Exportar Skills para Agentes de Código,
+Tudo também está no menu **Brokspace** e na paleta de comandos:
+Configurações, Lembrar, Gerenciar Memória, Vincular um Workspace,
+Sincronizar Workspaces Vinculados, Configurar Workspace, Iniciar / Parar / Reiniciar, Reconstruir Índice, Diagnóstico,
+Conectar Agentes de Código, Instalar, Criar e Remover Shard, Exportar Skills para Agentes de Código,
 Executar Skill, Revisar, Escrever Mensagem de Commit. A barra de status
 mostra se o Brokspace está rodando e qual modelo ele usa.
 
@@ -105,4 +137,4 @@ sistema em português; troque em **Idioma** na página inicial.
 A IDE conversa com o Brokspace apenas pela CLI `brok` e sua saída JSON (veja
 [Integrações](/pt-br/docs/integrations)), então ela mostra exatamente o que o
 `brok` vê, e tudo o que ela faz você também pode fazer em um terminal. Ela
-precisa do brok 0.2.4 ou mais recente; o que vem com ela atende.
+precisa do brok 0.3.0 ou mais recente; o que vem com ela atende.

@@ -68,8 +68,36 @@ Extensions stay one shortcut away.
 | Section | What it shows |
 |---|---|
 | **Overview** | Whether Brokspace is running, the model, the index, search, and Ask / Review / Commit |
+| **Memory** | The latest decisions, facts, notes and chat sessions; click one to open it. **+** remembers something new (`Ctrl+Alt+M`, or select code first to remember it with where it is) |
 | **Shards** | Each installed shard and its state; expand one to see what it reads and writes, whether it uses the network, the programs it runs, the events it listens to and publishes, and where it came from. Install, create or remove shards from the toolbar |
 | **Skills** | Workflows you run and the skills your agents use; click to run one |
+
+## Brokspace settings
+
+Open **Brokspace: Settings** (`Ctrl+Alt+,`, or the gear in the Brokspace
+view) for one page with everything Brokspace does in this workspace:
+
+| Section | What you can do |
+|---|---|
+| **Overview** | The service, the model, the index, memories and links at a glance; start, stop or restart; open `brok.yml` |
+| **AI model** | Pick the default provider, change model and URL, add an OpenAI-compatible provider (API keys stay in environment variables) |
+| **Search and index** | Search by meaning on or off, results per search, ranking weights, files to skip |
+| **Memory** | Turn memory and chat sessions on or off, browse and filter memories by scope, add or forget one |
+| **Linked workspaces** | Link a folder or a git repository this workspace depends on, see whether it is indexed, sync or unlink it |
+| **Coding agents** | Connect Claude Code, Cursor, VS Code / Copilot and Codex; export skills |
+| **Diagnostics** | Versions, partitions, Doctor and logs |
+
+Every change goes through `brok config`: it is checked before it is saved to
+`brok.yml`, and the page offers to restart Brokspace when it is running.
+
+## Memory and linked workspaces
+
+Brokspace remembers between sessions: each chat with the agent is saved as a
+session memory, and the decisions and facts you (or your coding agents) save
+are found in every answer. Memories are private, shared with your team
+through git, or global to all your workspaces. Linked workspaces, such as the
+`checkout` service your `user` service calls, are searched with yours, and
+their results open in the IDE. See [Memory and linked workspaces](/docs/memory).
 
 ## The Brokspace agent
 
@@ -89,9 +117,10 @@ local index found, as links.
 ## Commands and languages
 
 Everything is also in the **Brokspace** menu and the command palette:
-Set Up Workspace, Start / Stop / Restart, Rebuild Index, Doctor, Install,
-Create and Remove Shard, Export Skills to Coding Agents, Run Skill, Review,
-Write Commit Message. The status bar shows whether Brokspace is running and
+Settings, Remember, Manage Memory, Link a Workspace, Sync Linked Workspaces,
+Set Up Workspace, Start / Stop / Restart, Rebuild Index, Doctor, Connect
+Coding Agents, Install, Create and Remove Shard, Export Skills to Coding
+Agents, Run Skill, Review, Write Commit Message. The status bar shows whether Brokspace is running and
 which model it uses.
 
 The IDE is in English and Brazilian Portuguese. It starts in Portuguese on a
@@ -102,4 +131,4 @@ Portuguese system; switch with **Language** on the home page.
 The IDE talks to Brokspace only through the `brok` CLI and its JSON output
 (see [Integrations](/docs/integrations)), so it shows exactly what `brok`
 sees, and anything it does you can also do in a terminal. It needs brok
-0.2.4 or newer; the one it ships with qualifies.
+0.3.0 or newer; the one it ships with qualifies.
