@@ -8,30 +8,32 @@
 // real server then never gets requests (503).
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequestHandler } from '@react-router/express';
 import compression from 'compression';
 import express from 'express';
 
+// Before anything loads React: React and react-dom must both be production builds.
 process.env.NODE_ENV ??= 'production';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const client = join(root, 'build', 'client');
 
-const app = express();
-app.disable('x-powered-by');
-app.use(compression());
-// Hashed build assets never change.
-app.use('/assets', express.static(join(client, 'assets'), { immutable: true, maxAge: '1y' }));
-app.use(express.static(client, { maxAge: '1h' }));
-app.all(
-  '/{*splat}',
-  createRequestHandler({
-    build: () => import('./build/server/index.js'),
-    mode: process.env.NODE_ENV,
-  }),
-);
+import('@react-router/express').then(({ createRequestHandler }) => {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(compression());
+  // Hashed build assets never change.
+  app.use('/assets', express.static(join(client, 'assets'), { immutable: true, maxAge: '1y' }));
+  app.use(express.static(client, { maxAge: '1h' }));
+  app.all(
+    '/{*splat}',
+    createRequestHandler({
+      build: () => import('./build/server/index.js'),
+      mode: process.env.NODE_ENV,
+    }),
+  );
 
-const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
-  console.log(`[brokspace.org] listening on ${port}`);
+  const port = Number(process.env.PORT) || 3000;
+  app.listen(port, () => {
+    console.log(`[brokspace.org] listening on ${port}`);
+  });
 });
