@@ -88,6 +88,15 @@ applies it to every new workspace, so you choose a model once per machine.
 
 See [Memory and linked workspaces](/docs/memory) for where memories live and how they are captured.
 
+## `metrics`
+
+| Key              | Default | Description                                                                                                                                          |
+| ---------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`        | `true`  | Record timings and counts of searches, answers, indexing and errors in `.brokspace/metrics/`. They never leave the machine; `brok stats` shows them. |
+| `retention_days` | `90`    | Older months are deleted when brok starts (1 to 3650).                                                                                               |
+
+See [Troubleshooting, metrics and bug reports](/docs/troubleshooting#metrics) for what is recorded.
+
 ## `llm`
 
 OpenAI-compatible chat completion endpoints used by `brok-agent`.
