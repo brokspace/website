@@ -23,6 +23,7 @@ const GUIDES = [
   'shards',
   'integrations',
   'memory',
+  'troubleshooting',
   'configuration',
   'architecture',
 ];

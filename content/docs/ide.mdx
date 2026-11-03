@@ -85,7 +85,8 @@ view) for one page with everything Brokspace does in this workspace:
 | **Memory** | Turn memory and chat sessions on or off, browse and filter memories by scope, add or forget one |
 | **Linked workspaces** | Link a folder or a git repository this workspace depends on, see whether it is indexed, sync or unlink it |
 | **Coding agents** | Connect Claude Code, Cursor, VS Code / Copilot and Codex; export skills |
-| **Diagnostics** | Versions, partitions, Doctor and logs |
+| **Diagnostics** | Activity from the local metrics (search and answer times, indexing, recent errors), health checks with their fixes, versions, partitions and logs |
+| **Report a bug** | A form that prepares a report with the diagnostics (secrets masked) and opens a prefilled GitHub issue |
 
 Every change goes through `brok config`: it is checked before it is saved to
 `brok.yml`, and the page offers to restart Brokspace when it is running.
@@ -98,6 +99,20 @@ are found in every answer. Memories are private, shared with your team
 through git, or global to all your workspaces. Linked workspaces, such as the
 `checkout` service your `user` service calls, are searched with yours, and
 their results open in the IDE. See [Memory and linked workspaces](/docs/memory).
+
+## Diagnostics and bug reports
+
+When something is slow or fails, open **Brokspace: Diagnostics**. It shows
+how searches, answers and indexing performed over the last day, week or
+month, the latest errors, and `brok doctor`'s checks with the fix for each.
+Metrics stay on your machine.
+
+To report a problem, use **Brokspace: Report a Bug…**, **Help › Report an
+IDE Issue**, or the **Report a Bug** button on a failed command. Describe
+what happened; the IDE adds the versions, the checks, recent metrics and the
+end of the log, with secrets masked, saves the report and opens a prefilled
+GitHub issue that you review before sending. See
+[Troubleshooting](/docs/troubleshooting).
 
 ## The Brokspace agent
 
@@ -131,4 +146,4 @@ Portuguese system; switch with **Language** on the home page.
 The IDE talks to Brokspace only through the `brok` CLI and its JSON output
 (see [Integrations](/docs/integrations)), so it shows exactly what `brok`
 sees, and anything it does you can also do in a terminal. It needs brok
-0.3.0 or newer; the one it ships with qualifies.
+0.4.0 or newer; the one it ships with qualifies.

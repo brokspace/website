@@ -89,7 +89,8 @@ workspace:
 | **Memória** | Ligar ou desligar a memória e as sessões de chat, navegar e filtrar memórias por escopo, adicionar ou esquecer uma |
 | **Workspaces vinculados** | Vincular uma pasta ou um repositório git do qual este workspace depende, ver se está indexado, sincronizar ou desvincular |
 | **Agentes de código** | Conectar Claude Code, Cursor, VS Code / Copilot e Codex; exportar skills |
-| **Diagnóstico** | Versões, partições, Diagnóstico e logs |
+| **Diagnóstico** | Atividade a partir das métricas locais (tempos de busca e de resposta, indexação, erros recentes), verificações de saúde com a correção de cada uma, versões, partições e logs |
+| **Relatar um bug** | Um formulário que prepara um relatório com o diagnóstico (segredos mascarados) e abre uma issue do GitHub já preenchida |
 
 Toda alteração passa pelo `brok config`: ela é verificada antes de ser salva
 no `brok.yml`, e a página oferece reiniciar o Brokspace quando ele está
@@ -104,6 +105,20 @@ compartilhadas com o seu time pelo git ou globais para todos os seus
 workspaces. Workspaces vinculados, como o serviço `checkout` que o seu
 serviço `user` chama, são buscados junto com o seu, e os resultados abrem na
 IDE. Veja [Memória e workspaces vinculados](/pt-br/docs/memory).
+
+## Diagnóstico e relato de bugs
+
+Quando algo está lento ou falha, abra **Brokspace: Diagnóstico**. Ele mostra
+como buscas, respostas e indexação se saíram no último dia, semana ou mês,
+os erros mais recentes e as verificações do `brok doctor` com a correção de
+cada uma. As métricas ficam na sua máquina.
+
+Para relatar um problema, use **Brokspace: Relatar um Bug…**, **Ajuda ›
+Relatar um Problema na IDE** ou o botão **Relatar um Bug** de um comando que
+falhou. Descreva o que aconteceu; a IDE adiciona as versões, as
+verificações, as métricas recentes e o final do log, com segredos
+mascarados, salva o relatório e abre uma issue do GitHub já preenchida, que
+você revisa antes de enviar. Veja [Solução de problemas](/pt-br/docs/troubleshooting).
 
 ## O agente Brokspace
 
@@ -137,4 +152,4 @@ sistema em português; troque em **Idioma** na página inicial.
 A IDE conversa com o Brokspace apenas pela CLI `brok` e sua saída JSON (veja
 [Integrações](/pt-br/docs/integrations)), então ela mostra exatamente o que o
 `brok` vê, e tudo o que ela faz você também pode fazer em um terminal. Ela
-precisa do brok 0.3.0 ou mais recente; o que vem com ela atende.
+precisa do brok 0.4.0 ou mais recente; o que vem com ela atende.
