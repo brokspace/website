@@ -10,13 +10,13 @@
     "shards",
     "memory",
     "integrations",
-    "---Brokspace IDE---",
-    "ide",
     "---Ecossistema---",
     "hub",
     "---Referência---",
     "troubleshooting",
     "configuration",
-    "architecture"
+    "architecture",
+    "---Descontinuado---",
+    "ide"
   ]
 }

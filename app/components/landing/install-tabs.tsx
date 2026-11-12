@@ -22,11 +22,6 @@ const OPTIONS = [
     label: 'Cargo',
     command: 'cargo install brok-cli brok-agent',
   },
-  {
-    id: 'ide',
-    label: 'IDE',
-    command: 'brew install --cask brokspace/tap/brokspace-ide',
-  },
 ] as const;
 
 export function InstallTabs() {
@@ -60,14 +55,7 @@ export function InstallTabs() {
         <Command command={option.command} />
         <p className="mt-3 text-sm text-ink-400">
           {m[option.id]}{' '}
-          {option.id === 'ide' ? (
-            <Link
-              to={localize(lang, '/docs/ide')}
-              className="text-mist underline-offset-4 hover:text-snow hover:underline"
-            >
-              {m.ideLink}
-            </Link>
-          ) : option.id === 'windows' ? (
+          {option.id === 'windows' ? (
             <Link
               to={localize(lang, '/docs/getting-started#1-install-brok')}
               className="text-mist underline-offset-4 hover:text-snow hover:underline"
