@@ -118,7 +118,7 @@ function Header({ stars }: { stars: number | null }) {
         </SiteLink>
         <div className="hidden items-center gap-1 text-sm text-mist md:flex">
           <NavLink to="/docs">{m.docs}</NavLink>
-          <NavLink to="/docs/ide">{m.ide}</NavLink>
+          <NavLink to="/docs/integrations">{m.editors}</NavLink>
           <NavLink to="/docs/hub">
             {m.hub}
             <span className="ml-1.5 rounded-full border border-white/12 px-1.5 py-px text-[10px] tracking-wide text-ink-400 uppercase">
@@ -209,7 +209,7 @@ function Hero({ stars }: { stars: number | null }) {
       <div className="mx-auto max-w-6xl px-5 pt-16 pb-24 sm:px-8 sm:pt-24 sm:pb-32">
         <div className="mx-auto max-w-4xl text-center">
           <SiteLink
-            to="/docs/ide"
+            to="/docs/memory"
             className="inline-flex animate-rise items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] py-1 pr-3 pl-1 text-[13px] text-mist backdrop-blur transition-colors hover:border-forge/40 hover:text-snow"
           >
             <span className="rounded-full bg-forge/15 px-2 py-0.5 text-xs font-medium text-forge-300">
@@ -527,7 +527,14 @@ function LocalFirst() {
 /* ------------------------------------------------------------------ */
 
 function Modes() {
-  const m = useMessages().modes;
+  const all = useMessages();
+  const m = all.modes;
+  // Where Brokspace is in each editor: coding agents today (MCP), extensions next.
+  const editors: [string, string, boolean][] = [
+    ['Claude Code · Cursor · Copilot · Codex (MCP)', m.now, true],
+    ['VS Code · Cursor · Windsurf', m.next, false],
+    ['IntelliJ IDEA · WebStorm · PyCharm · GoLand', m.later, false],
+  ];
   const commands: [string, string][] = [
     ['search', m.commands.search],
     ['ask', m.commands.ask],
@@ -567,28 +574,32 @@ function Modes() {
           </SiteLink>
         </article>
 
-        <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-gradient-to-b from-white/[0.035] to-transparent">
-          <div className="p-6 sm:p-7">
-            <p className="font-mono text-xs tracking-widest text-ink-400 uppercase">IDE</p>
-            <h3 className="mt-3 text-2xl font-semibold tracking-[-0.025em]">Brokspace IDE</h3>
-            <p className="mt-2 max-w-lg leading-relaxed text-mist">{m.ideBody}</p>
-            <SiteLink
-              to="/docs/ide"
-              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-snow hover:text-forge-300"
-            >
-              {m.platforms} <ArrowRight className="size-4" aria-hidden="true" />
-            </SiteLink>
-          </div>
-          <div className="relative mt-auto pl-6 sm:pl-7">
-            <img
-              src="/images/ide-home.png"
-              alt={m.ideAlt}
-              width={1440}
-              height={900}
-              loading="lazy"
-              className="w-full rounded-tl-xl border-t border-l border-white/10 object-cover object-left-top shadow-2xl"
-            />
-          </div>
+        <article className="flex min-w-0 flex-col rounded-2xl border border-white/8 bg-gradient-to-b from-white/[0.035] to-transparent p-6 sm:p-7">
+          <p className="font-mono text-xs tracking-widest text-ink-400 uppercase">{all.nav.editors}</p>
+          <h3 className="mt-3 text-2xl font-semibold tracking-[-0.025em]">{m.editorsTitle}</h3>
+          <p className="mt-2 max-w-lg leading-relaxed text-mist">{m.editorsBody}</p>
+          <ul className="mt-6 flex-1 divide-y divide-white/8 rounded-xl border border-white/8">
+            {editors.map(([names, status, ready]) => (
+              <li key={names} className="flex items-center gap-3 px-4 py-3 text-sm">
+                <span className="min-w-0 flex-1 truncate text-snow">{names}</span>
+                <span
+                  className={
+                    ready
+                      ? 'rounded-full bg-forge/15 px-2 py-0.5 text-xs font-medium text-forge-300'
+                      : 'rounded-full border border-white/12 px-2 py-0.5 text-xs text-ink-400'
+                  }
+                >
+                  {status}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <SiteLink
+            to="/docs/integrations"
+            className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-snow hover:text-forge-300"
+          >
+            {m.editorsLink} <ArrowRight className="size-4" aria-hidden="true" />
+          </SiteLink>
         </article>
       </div>
     </section>
@@ -654,7 +665,6 @@ function OpenSource({ stars }: { stars: number | null }) {
     { name: 'brok-agent', description: m.repos.agent, href: links.agent },
     { name: 'brok-sdk', description: m.repos.sdk, href: links.sdk },
     { name: 'brok-shard-template', description: m.repos.shardTemplate, href: links.shardTemplate },
-    { name: 'ide', description: m.repos.ide, href: links.ide },
     { name: 'example-nestjs', description: m.repos.example, href: links.example },
   ];
   return (
@@ -718,7 +728,7 @@ function Footer() {
       items: [
         { label: m.docs, to: '/docs' },
         { label: m.gettingStarted, to: '/docs/getting-started' },
-        { label: m.ide, to: '/docs/ide' },
+        { label: m.memory, to: '/docs/memory' },
         { label: m.hub, to: '/docs/hub' },
       ],
     },
