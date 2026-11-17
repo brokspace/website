@@ -17,7 +17,7 @@ const en = {
     main: 'Main',
     home: 'Brokspace home',
     docs: 'Docs',
-    ide: 'IDE',
+    vscode: 'VS Code',
     hub: 'Hub',
     soon: 'Soon',
     getStarted: 'Get started',
@@ -30,7 +30,7 @@ const en = {
   },
   hero: {
     badge: 'New',
-    announcement: 'Brokspace IDE: the same workspace, in an IDE',
+    announcement: 'Brokspace for VS Code: your workspace, understood',
     titleTop: 'Your workspace,',
     titleAccent: 'understood.',
     lead: 'Brokspace indexes every repository you work in, on your machine, and gives you, your LLM and your coding agents the context they are missing.',
@@ -43,7 +43,7 @@ const en = {
   features: {
     eyebrow: 'What it does',
     title: 'Context, everywhere you work.',
-    lead: 'One local index of your code, shared by the terminal, the IDE, your LLM and every coding agent you use.',
+    lead: 'One local index of your code, shared by the terminal, VS Code, your LLM and every coding agent you use.',
     search: {
       title: 'Search that reads code like you do',
       body: 'Functions, classes and doc sections are indexed whole, then found by meaning or by name: hybrid BM25 and semantic search over one repository, its submodules, or a folder full of them.',
@@ -90,9 +90,9 @@ const en = {
     ],
   },
   modes: {
-    eyebrow: 'CLI mode, IDE mode',
+    eyebrow: 'CLI and VS Code',
     title: 'One workspace. Two ways in.',
-    lead: 'Use brok in any terminal and editor, or open the same workspace in Brokspace IDE. Both read the same .brokspace/ folder, so you can switch at any time.',
+    lead: 'Use brok in any terminal, then use the same workspace through the Brokspace extension in VS Code and compatible editors. They all read the same .brokspace/ folder.',
     cliBody: 'Every feature, scriptable, with JSON output for your own tools.',
     commands: {
       search: 'find code by meaning or by name',
@@ -104,10 +104,9 @@ const en = {
       shard: 'add an integration',
     },
     gettingStarted: 'Getting started',
-    ideBody:
-      'Built on Eclipse Theia, with brok inside: start from a question, chat with the Brokspace agent, manage shards, review and commit in a click. In English and Portuguese.',
-    platforms: 'macOS, Linux and Windows',
-    ideAlt: 'Brokspace IDE home page, with a question box and the Brokspace view in the sidebar',
+    vscodeBody:
+      'Search, chat with the Brokspace agent, manage memories, links, skills and shards, review and commit without leaving the editor. Works in VS Code and compatible editors, in English and Portuguese.',
+    installExtension: 'Install the extension',
   },
   getStarted: {
     eyebrow: 'Get started',
@@ -127,8 +126,8 @@ const en = {
     unix: 'Installs brok and brok-agent and verifies their checksums.',
     windows: 'In PowerShell. Script blocked by IT? The getting started guide has a manual install.',
     cargo: 'Needs a C compiler and protoc. Add --no-default-features for a text-search-only build.',
-    ide: 'Brokspace IDE bundles brok. Also on apt, and as a Windows installer.',
-    ideLink: 'All IDE installers',
+    vscode: 'Install the extension from VS Code or with this command. It uses the brok already installed on your machine.',
+    vscodeLink: 'VS Code extension guide',
     manual: 'Manual install',
     releaseNotes: 'Release notes',
   },
@@ -141,7 +140,7 @@ const en = {
       agent: 'The helper that tracks changes and talks to the LLM.',
       sdk: 'Rust SDK and protocol for the event bus.',
       shardTemplate: 'Start a new shard in minutes.',
-      ide: 'Brokspace IDE, built on Eclipse Theia.',
+      vscode: 'Brokspace for VS Code, Cursor, Windsurf, Devin Desktop and VSCodium.',
       example: 'A sample project to try Brokspace on.',
     },
   },
@@ -151,7 +150,7 @@ const en = {
     community: 'Community',
     docs: 'Docs',
     gettingStarted: 'Getting started',
-    ide: 'Brokspace IDE',
+    vscode: 'VS Code extension',
     hub: 'Shard Hub',
     skills: 'Skills',
     shards: 'Shards',
@@ -180,7 +179,7 @@ const ptBr: Messages = {
     main: 'Principal',
     home: 'Início do Brokspace',
     docs: 'Docs',
-    ide: 'IDE',
+    vscode: 'VS Code',
     hub: 'Hub',
     soon: 'Em breve',
     getStarted: 'Começar',
@@ -193,7 +192,7 @@ const ptBr: Messages = {
   },
   hero: {
     badge: 'Novo',
-    announcement: 'Brokspace IDE: o mesmo workspace, em uma IDE',
+    announcement: 'Brokspace para VS Code: seu workspace, compreendido',
     titleTop: 'Seu workspace,',
     titleAccent: 'compreendido.',
     lead: 'O Brokspace indexa cada repositório em que você trabalha, na sua máquina, e dá a você, ao seu LLM e aos seus agentes de código o contexto que falta.',
@@ -206,7 +205,7 @@ const ptBr: Messages = {
   features: {
     eyebrow: 'O que ele faz',
     title: 'Contexto, onde quer que você trabalhe.',
-    lead: 'Um único índice local do seu código, compartilhado pelo terminal, pela IDE, pelo seu LLM e por todos os agentes de código que você usa.',
+    lead: 'Um único índice local do seu código, compartilhado pelo terminal, pelo VS Code, pelo seu LLM e por todos os agentes de código que você usa.',
     search: {
       title: 'Busca que lê código como você',
       body: 'Funções, classes e seções de documentação são indexadas inteiras e encontradas pelo significado ou pelo nome: busca híbrida BM25 e semântica em um repositório, nos seus submódulos ou em uma pasta cheia deles.',
@@ -253,9 +252,9 @@ const ptBr: Messages = {
     ],
   },
   modes: {
-    eyebrow: 'Modo CLI, modo IDE',
+    eyebrow: 'CLI e VS Code',
     title: 'Um workspace. Duas portas de entrada.',
-    lead: 'Use o brok em qualquer terminal e editor, ou abra o mesmo workspace na Brokspace IDE. Os dois leem a mesma pasta .brokspace/, então você pode alternar a qualquer momento.',
+    lead: 'Use o brok em qualquer terminal, depois use o mesmo workspace pela extensão Brokspace no VS Code e em editores compatíveis. Todos leem a mesma pasta .brokspace/.',
     cliBody: 'Todos os recursos, scriptáveis, com saída JSON para as suas ferramentas.',
     commands: {
       search: 'encontre código pelo significado ou pelo nome',
@@ -267,10 +266,9 @@ const ptBr: Messages = {
       shard: 'adicione uma integração',
     },
     gettingStarted: 'Primeiros passos',
-    ideBody:
-      'Feita sobre o Eclipse Theia, com o brok dentro: comece por uma pergunta, converse com o agente Brokspace, gerencie shards, revise e faça commit em um clique. Em português e inglês.',
-    platforms: 'macOS, Linux e Windows',
-    ideAlt: 'Página inicial da Brokspace IDE, com uma caixa de pergunta e a visão Brokspace na barra lateral',
+    vscodeBody:
+      'Busque, converse com o agente Brokspace, gerencie memórias, links, skills e shards, revise e faça commit sem sair do editor. Funciona no VS Code e em editores compatíveis, em português e inglês.',
+    installExtension: 'Instale a extensão',
   },
   getStarted: {
     eyebrow: 'Começar',
@@ -291,8 +289,8 @@ const ptBr: Messages = {
     windows: 'No PowerShell. Script bloqueado pela TI? O guia de primeiros passos tem uma instalação manual.',
     cargo:
       'Precisa de um compilador C e do protoc. Use --no-default-features para uma versão só com busca textual.',
-    ide: 'A Brokspace IDE já inclui o brok. Também no apt e como instalador para Windows.',
-    ideLink: 'Todos os instaladores da IDE',
+    vscode: 'Instale a extensão pelo VS Code ou com este comando. Ela usa o brok já instalado na sua máquina.',
+    vscodeLink: 'Guia da extensão para VS Code',
     manual: 'Instalação manual',
     releaseNotes: 'Notas da versão',
   },
@@ -305,7 +303,7 @@ const ptBr: Messages = {
       agent: 'O auxiliar que acompanha as alterações e conversa com o LLM.',
       sdk: 'SDK em Rust e protocolo do barramento de eventos.',
       shardTemplate: 'Comece um shard novo em minutos.',
-      ide: 'Brokspace IDE, feita sobre o Eclipse Theia.',
+      vscode: 'Brokspace para VS Code, Cursor, Windsurf, Devin Desktop e VSCodium.',
       example: 'Um projeto de exemplo para experimentar o Brokspace.',
     },
   },
@@ -315,7 +313,7 @@ const ptBr: Messages = {
     community: 'Comunidade',
     docs: 'Docs',
     gettingStarted: 'Primeiros passos',
-    ide: 'Brokspace IDE',
+    vscode: 'Extensão para VS Code',
     hub: 'Shard Hub',
     skills: 'Skills',
     shards: 'Shards',

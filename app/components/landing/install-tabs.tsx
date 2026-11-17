@@ -23,9 +23,9 @@ const OPTIONS = [
     command: 'cargo install brok-cli brok-agent',
   },
   {
-    id: 'ide',
-    label: 'IDE',
-    command: 'brew install --cask brokspace/tap/brokspace-ide',
+    id: 'vscode',
+    label: 'VS Code',
+    command: 'code --install-extension brokspace.brokspace',
   },
 ] as const;
 
@@ -60,12 +60,12 @@ export function InstallTabs() {
         <Command command={option.command} />
         <p className="mt-3 text-sm text-ink-400">
           {m[option.id]}{' '}
-          {option.id === 'ide' ? (
+          {option.id === 'vscode' ? (
             <Link
-              to={localize(lang, '/docs/ide')}
+              to={localize(lang, '/docs/vscode')}
               className="text-mist underline-offset-4 hover:text-snow hover:underline"
             >
-              {m.ideLink}
+              {m.vscodeLink}
             </Link>
           ) : option.id === 'windows' ? (
             <Link

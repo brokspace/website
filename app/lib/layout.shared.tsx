@@ -15,7 +15,7 @@ export function baseOptions(lang: Lang = i18n.defaultLanguage): BaseLayoutProps 
     i18n: true,
     links: [
       { text: m.docs, url: localize(lang, '/docs'), active: 'nested-url' },
-      { text: m.ide, url: localize(lang, '/docs/ide') },
+      { text: m.vscode, url: localize(lang, '/docs/vscode') },
       { text: m.hub, url: localize(lang, '/docs/hub') },
     ],
   };
