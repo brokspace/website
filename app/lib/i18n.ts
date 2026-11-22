@@ -2,7 +2,7 @@ import { defineI18n } from 'fumadocs-core/i18n';
 
 /**
  * English at `/` and `/docs/...`, Brazilian Portuguese under `/pt-br`.
- * Translated docs sit next to the English ones (`ide.pt-br.mdx`,
+ * Translated docs sit next to the English ones (`vscode.pt-br.mdx`,
  * `meta.pt-br.json`); a page without a translation shows the English one.
  */
 export const i18n = defineI18n({
@@ -33,7 +33,7 @@ export function langFromPath(pathname: string): Lang {
   return isLang(first) && first !== i18n.defaultLanguage ? first : i18n.defaultLanguage;
 }
 
-/** A site path in `lang`: `localize('pt-br', '/docs/ide')` is `/pt-br/docs/ide`. */
+/** A site path in `lang`: `localize('pt-br', '/docs/vscode')` is `/pt-br/docs/vscode`. */
 export function localize(lang: Lang, path: string): string {
   if (lang === i18n.defaultLanguage || !path.startsWith('/')) return path;
   return path === '/' ? `/${lang}` : `/${lang}${path}`;
