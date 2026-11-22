@@ -80,11 +80,11 @@ applies it to every new workspace, so you choose a model once per machine.
 
 ## `memory`
 
-| Key        | Default | Description                                                                           |
-| ---------- | ------- | ------------------------------------------------------------------------------------- |
+| Key        | Default | Description                                                                                         |
+| ---------- | ------- | --------------------------------------------------------------------------------------------------- |
 | `enabled`  | `true`  | Search memories with the code and let `brok memory`, the VS Code extension and MCP tools save them. |
-| `sessions` | `true`  | Save editor chat sessions as `session` memories.                                      |
-| `global`   | `true`  | Search your global memories (every workspace) here too.                               |
+| `sessions` | `true`  | Save editor chat sessions as `session` memories.                                                    |
+| `global`   | `true`  | Search your global memories (every workspace) here too.                                             |
 
 See [Memory and linked workspaces](/docs/memory) for where memories live and how they are captured.
 

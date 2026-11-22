@@ -32,7 +32,7 @@ pnpm build && pnpm start   # production build (build/client), http://localhost:4
 | `app/routes/install.ts`   | `brokspace.org/install.sh` and `/install.ps1`, redirects to the scripts in brokspace/brok        |
 | `app/routes/og.docs.tsx`  | Open Graph images for docs pages                                                                 |
 | `content/docs/`           | The documentation (MDX and Markdown); order and sections in `meta.json`                          |
-| `public/`                 | Favicons, social image and brand SVGs                                                             |
+| `public/`                 | Favicons, social image and brand SVGs                                                            |
 | `app/lib/i18n.ts`         | Languages, URL helpers (`localize`, `switchLang`)                                                |
 | `app/lib/messages.ts`     | Every landing and site string in English and Portuguese, plus Fumadocs UI strings in Portuguese  |
 

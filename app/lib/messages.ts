@@ -126,7 +126,8 @@ const en = {
     unix: 'Installs brok and brok-agent and verifies their checksums.',
     windows: 'In PowerShell. Script blocked by IT? The getting started guide has a manual install.',
     cargo: 'Needs a C compiler and protoc. Add --no-default-features for a text-search-only build.',
-    vscode: 'Install the extension from VS Code or with this command. It uses the brok already installed on your machine.',
+    vscode:
+      'Install the extension from VS Code or with this command. It uses the brok already installed on your machine.',
     vscodeLink: 'VS Code extension guide',
     manual: 'Manual install',
     releaseNotes: 'Release notes',
@@ -289,7 +290,8 @@ const ptBr: Messages = {
     windows: 'No PowerShell. Script bloqueado pela TI? O guia de primeiros passos tem uma instalação manual.',
     cargo:
       'Precisa de um compilador C e do protoc. Use --no-default-features para uma versão só com busca textual.',
-    vscode: 'Instale a extensão pelo VS Code ou com este comando. Ela usa o brok já instalado na sua máquina.',
+    vscode:
+      'Instale a extensão pelo VS Code ou com este comando. Ela usa o brok já instalado na sua máquina.',
     vscodeLink: 'Guia da extensão para VS Code',
     manual: 'Instalação manual',
     releaseNotes: 'Notas da versão',
