@@ -1,6 +1,7 @@
 {
   "name": "brokspace-website",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "type": "module",
   "engines": {
     "node": "24.x"
