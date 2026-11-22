@@ -1,0 +1,50 @@
+---
+title: Brokspace para VS Code
+description: Use busca, chat, revisões, memórias e fluxos de trabalho do Brokspace no VS Code e em editores compatíveis.
+---
+
+A extensão Brokspace leva seu workspace local do Brokspace para o VS Code.
+Ela também funciona no Cursor, Windsurf, Devin Desktop e VSCodium. A extensão
+usa a CLI `brok`, então seu terminal, agentes de código e editor compartilham
+a mesma pasta `.brokspace/`, índice, configurações de LLM e memórias.
+
+## Instalação
+
+Instale primeiro o [brok](/pt-br/docs/getting-started) 0.4.0 ou mais recente,
+depois instale a extensão pelo [Marketplace do VS Code](https://marketplace.visualstudio.com/items?itemName=brokspace.brokspace) ou execute:
+
+```sh
+code --install-extension brokspace.brokspace
+```
+
+Se o `brok` não estiver no seu `PATH`, configure `brokspace.brokPath` com o
+executável. Abra uma pasta de projeto e execute **Brokspace: Set Up
+Workspace** na barra lateral do Brokspace ou na Paleta de Comandos. Isso cria
+`.brokspace/brok.yml`, indexa a pasta e inicia o Brokspace.
+
+## O que você pode fazer
+
+- Buscar no workspace e nos workspaces vinculados pelo significado ou nome.
+- Fazer perguntas com links para as fontes ou conversar sem sair do editor.
+- Revisar suas alterações ou as alterações preparadas e escrever uma mensagem
+  de commit.
+- Salvar, navegar e buscar memórias, incluindo o código selecionado.
+- Gerenciar workspaces vinculados, skills e shards.
+- Registrar o servidor MCP do Brokspace para o Copilot e outros clientes
+  compatíveis.
+
+A extensão precisa de um LLM e do shard `brok-agent` para respostas, revisões
+e mensagens de commit. A busca funciona sem um LLM.
+
+## Comandos úteis
+
+| Comando | O que faz |
+|---|---|
+| **Brokspace: Search** | Busca código com `Ctrl+Alt+F` (`Cmd+Option+F` no macOS). |
+| **Brokspace: Open Chat** | Faz uma pergunta com `Ctrl+Shift+Alt+B` (`Cmd+Shift+Option+B` no macOS). |
+| **Brokspace: Set Up Workspace** | Cria e indexa o workspace Brokspace. |
+| **Brokspace: Doctor** | Verifica o executável, workspace e serviços. |
+| **Brokspace: Report a Bug** | Abre uma issue com diagnósticos, com segredos ocultos. |
+
+Para detalhes de configuração e desenvolvimento, consulte o
+[repositório da extensão](https://github.com/brokspace/vscode).

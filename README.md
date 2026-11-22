@@ -32,7 +32,7 @@ pnpm build && pnpm start   # production build (build/client), http://localhost:4
 | `app/routes/install.ts`   | `brokspace.org/install.sh` and `/install.ps1`, redirects to the scripts in brokspace/brok        |
 | `app/routes/og.docs.tsx`  | Open Graph images for docs pages                                                                 |
 | `content/docs/`           | The documentation (MDX and Markdown); order and sections in `meta.json`                          |
-| `public/`                 | Favicons, social image, brand SVGs, IDE screenshots                                              |
+| `public/`                 | Favicons, social image and brand SVGs                                                            |
 | `app/lib/i18n.ts`         | Languages, URL helpers (`localize`, `switchLang`)                                                |
 | `app/lib/messages.ts`     | Every landing and site string in English and Portuguese, plus Fumadocs UI strings in Portuguese  |
 
@@ -40,7 +40,7 @@ pnpm build && pnpm start   # production build (build/client), http://localhost:4
 
 Two kinds of pages live in `content/docs/`:
 
-- **Site pages** (`index.mdx`, `ide.mdx`, `hub.mdx`): edit them here.
+- **Site pages** (`index.mdx`, `vscode.mdx`, `hub.mdx`): edit them here.
 - **CLI guides** (`getting-started.md`, `local-llm.md`, `skills.md`,
   `shards.md`, `integrations.md`, `configuration.md`, `architecture.md`):
   copied from [brokspace/brok `docs/`](https://github.com/brokspace/brok/tree/main/docs),
@@ -69,7 +69,7 @@ the same page.
   has the type of the English one, so `pnpm types:check` fails when a string
   is missing.
 - **Docs:** a translation sits next to its page with a `.pt-br` suffix
-  (`ide.pt-br.mdx`, `meta.pt-br.json`); link to other pages with `/pt-br/docs/...`.
+  (`vscode.pt-br.mdx`, `meta.pt-br.json`); link to other pages with `/pt-br/docs/...`.
   A page without a translation (the synced CLI guides today) shows the
   English page under `/pt-br`, with a note saying so.
 - **Search** returns results in the language of the page.

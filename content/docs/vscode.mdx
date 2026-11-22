@@ -1,0 +1,48 @@
+---
+title: Brokspace for VS Code
+description: Use Brokspace search, chat, reviews, memories and workflows in VS Code and compatible editors.
+---
+
+The Brokspace extension brings your local Brokspace workspace into VS Code.
+It also works in Cursor, Windsurf, Devin Desktop and VSCodium. The extension
+uses the `brok` CLI, so your terminal, coding agents and editor share the
+same `.brokspace/` folder, index, LLM settings and memories.
+
+## Install
+
+Install [brok](/docs/getting-started) 0.4.0 or newer first, then install the
+extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=brokspace.brokspace) or run:
+
+```sh
+code --install-extension brokspace.brokspace
+```
+
+If `brok` is not on your `PATH`, set `brokspace.brokPath` to its executable.
+Open a project folder, then run **Brokspace: Set Up Workspace** from the
+Brokspace sidebar or Command Palette. It creates `.brokspace/brok.yml`,
+indexes the folder and starts Brokspace.
+
+## What you can do
+
+- Search the workspace and linked workspaces by meaning or by name.
+- Ask questions with source links, or chat without leaving the editor.
+- Review your working tree or staged changes and write a commit message.
+- Save, browse and search memories, including the selected code.
+- Manage linked workspaces, skills and shards.
+- Register Brokspace's MCP server for Copilot and other compatible clients.
+
+The extension needs an LLM and the `brok-agent` shard for answers, reviews
+and commit messages. Search works without an LLM.
+
+## Useful commands
+
+| Command | What it does |
+|---|---|
+| **Brokspace: Search** | Search code with `Ctrl+Alt+F` (`Cmd+Option+F` on macOS). |
+| **Brokspace: Open Chat** | Ask a question with `Ctrl+Shift+Alt+B` (`Cmd+Shift+Option+B` on macOS). |
+| **Brokspace: Set Up Workspace** | Create and index the Brokspace workspace. |
+| **Brokspace: Doctor** | Check the executable, workspace and services. |
+| **Brokspace: Report a Bug** | Open an issue with diagnostics, with secrets masked. |
+
+For configuration and development details, see the
+[extension repository](https://github.com/brokspace/vscode).

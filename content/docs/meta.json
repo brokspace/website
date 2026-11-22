@@ -10,13 +10,13 @@
     "shards",
     "memory",
     "integrations",
+    "---VS Code extension---",
+    "vscode",
     "---Ecosystem---",
     "hub",
     "---Reference---",
     "troubleshooting",
     "configuration",
-    "architecture",
-    "---Discontinued---",
-    "ide"
+    "architecture"
   ]
 }
