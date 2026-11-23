@@ -10,15 +10,37 @@ a mesma pasta `.brokspace/`, índice, configurações de LLM e memórias.
 
 ## Instalação
 
-Instale primeiro o [brok](/pt-br/docs/getting-started) 0.4.0 ou mais recente,
-depois instale a extensão pelo [Marketplace do VS Code](https://marketplace.visualstudio.com/items?itemName=brokspace.brokspace) ou execute:
+Instale a extensão pelo [Marketplace do VS Code](https://marketplace.visualstudio.com/items?itemName=brokspace.brokspace) ou execute:
 
 ```sh
 code --install-extension brokspace.brokspace
 ```
 
-Se o `brok` não estiver no seu `PATH`, configure `brokspace.brokPath` com o
-executável. Abra uma pasta de projeto e execute **Brokspace: Set Up
+A extensão precisa da ferramenta de linha de comando `brok` (0.4.0 ou mais
+recente). Se você já a tem, por [Homebrew, APT ou o binário da release](/pt-br/docs/getting-started),
+a extensão a encontra no `PATH` ou em `brokspace.brokPath` e a usa.
+
+### Download no primeiro uso
+
+Se o `brok` não estiver instalado, a extensão pergunta antes de fazer qualquer
+coisa. Se você aceitar, ela:
+
+- baixa o executável `brok` da sua plataforma das
+  [releases do brokspace/brok no GitHub](https://github.com/brokspace/brok/releases)
+  (cerca de 150 a 220 MB, nenhum outro host);
+- confere o arquivo com o SHA-256 publicado ao lado dele e não instala nada se
+  não bater;
+- guarda tudo na pasta de armazenamento da própria extensão: sem permissão de
+  administrador e sem alterar o seu `PATH`.
+
+Um `brok` que você já tenha sempre tem prioridade sobre a cópia baixada. Execute
+**Brokspace: Download and Install brok** para fazer isso depois; desinstalar a
+extensão remove a cópia. O download é uma conveniência: se você gerencia
+ferramentas com um gerenciador de pacotes, instale o `brok` assim e a extensão
+o usará (e não atualizará a cópia baixada). O download precisa de acesso à rede
+para github.com uma vez.
+
+Abra uma pasta de projeto e execute **Brokspace: Set Up
 Workspace** na barra lateral do Brokspace ou na Paleta de Comandos. Isso cria
 `.brokspace/brok.yml`, indexa a pasta e inicia o Brokspace.
 
