@@ -4,7 +4,8 @@ description: Use busca, chat, revisões, memórias e fluxos de trabalho do Broks
 ---
 
 A extensão Brokspace leva seu workspace local do Brokspace para o VS Code.
-Ela também funciona no Cursor, Windsurf, Devin Desktop e VSCodium. A extensão
+Ela foi feita para o VS Code e projetada para rodar em editores baseados nele
+(veja [Outros editores](#outros-editores)). A extensão
 usa a CLI `brok`, então seu terminal, agentes de código e editor compartilham
 a mesma pasta `.brokspace/`, índice, configurações de LLM e memórias.
 
@@ -39,6 +40,32 @@ extensão remove a cópia. O download é uma conveniência: se você gerencia
 ferramentas com um gerenciador de pacotes, instale o `brok` assim e a extensão
 o usará (e não atualizará a cópia baixada). O download precisa de acesso à rede
 para github.com uma vez.
+
+### Outros editores
+
+O Visual Studio Code é o editor suportado e testado. A extensão usa apenas a
+API pública de extensões do VS Code e declara o VS Code 1.90 como mínimo,
+então foi projetada para instalar em editores que implementam essa API, como
+Cursor, Windsurf, Devin Desktop e VSCodium. É um objetivo de projeto, não uma
+garantia:
+
+- **Não testada neles.** Testamos apenas no VS Code. Um fork pode estar atrás
+  da API do VS Code ou não ter partes dela (o participante de chat
+  `@brokspace` e o registro do MCP dependem de APIs mais novas e são ignorados
+  onde faltam). Recursos que precisam de uma API ausente ficam desativados, e o
+  resto continua funcionando.
+- **Onde obter.** O Visual Studio Marketplace é para os produtos da própria
+  Microsoft, então esses editores não instalam por ele. Baixe
+  `brokspace-<versão>.vsix` nas
+  [releases do GitHub](https://github.com/brokspace/vscode/releases) e use
+  **Extensions: Install from VSIX**. A publicação no Open VSX, o registro que
+  muitos deles usam, está planejada, mas ainda não existe.
+- **Reporte problemas.** Se algo não funcionar no seu editor,
+  [abra uma issue](https://github.com/brokspace/vscode/issues) com o editor e a
+  versão. Corrigimos o que for razoável.
+
+A CLI `brok`, e com ela o MCP e as skills dos seus agentes de código, não
+depende de nenhum editor.
 
 Abra uma pasta de projeto e execute **Brokspace: Set Up
 Workspace** na barra lateral do Brokspace ou na Paleta de Comandos. Isso cria
