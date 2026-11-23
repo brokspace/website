@@ -51,6 +51,18 @@ and `brok-agent-windows-x86_64.exe` from the
 rename them `brok.exe` and `brok-agent.exe`, put both in one folder and add
 that folder to your `PATH`.
 
+**Homebrew** (macOS and Linux):
+
+```sh
+brew install brokspace/brok/brok
+brew install brokspace/brok/brok-agent   # optional, the default agent
+```
+
+**Using the VS Code extension?** You can skip this step: if `brok` is missing,
+the extension offers to download it (verified against its published SHA-256, kept
+in the extension's own folder). A `brok` installed here always takes
+precedence. See [Brokspace for VS Code](/docs/vscode).
+
 **Prefer Cargo?** `cargo install brok-cli brok-agent` (needs a C compiler and
 `protoc`), or `cargo install brok-cli brok-agent --no-default-features` for a
 lighter build with text search only.
