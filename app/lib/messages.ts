@@ -69,6 +69,38 @@ const en = {
       body: 'Small programs in any language that react to workspace events on a local bus, each limited to the files, programs and network it declares up front. Start from the template, share them as git repositories.',
     },
   },
+  metaWorkspace: {
+    eyebrow: 'Meta Workspace',
+    titleTop: 'Several repositories.',
+    titleBottom: 'One workspace.',
+    lead: 'Register the repositories you work across, a frontend, the APIs it calls, the shared library, and search, ask and work across them. Each keeps its own Git history and its own index: it is not a monorepo, and Brokspace never writes inside them.',
+    legend: 'Status of each capability:',
+    available: 'Available',
+    planned: 'Planned',
+    items: [
+      {
+        status: 'available',
+        title: 'Members, not a monorepo',
+        body: 'Add local folders or Git URLs as members, with typed relationships such as consumes_api. Adopt it step by step: a workspace without members works exactly as before.',
+      },
+      {
+        status: 'available',
+        title: 'Search across repositories',
+        body: 'brok search --scope workspace, the MCP brok_search tool and your shards search every member through its own index, read only, and name the repository of each hit.',
+      },
+      {
+        status: 'available',
+        title: 'Git today, behind a contract',
+        body: 'Git is the built-in source-control provider and behaves as before. Source control sits behind a capability contract, so other systems can be added without changing the rest.',
+      },
+      {
+        status: 'planned',
+        title: 'Engineering context and agent runtimes',
+        body: 'Providers that bring in context from other tools and run agents under permission boundaries are designed, not shipped. No third-party integration is available yet.',
+      },
+    ],
+    docs: 'Read the concepts',
+  },
   localFirst: {
     eyebrow: 'Local-first',
     titleTop: 'Nothing leaves your machine.',
@@ -231,6 +263,38 @@ const ptBr: Messages = {
       title: 'Shards: seu workspace, programável',
       body: 'Pequenos programas em qualquer linguagem que reagem a eventos do workspace em um barramento local, cada um limitado aos arquivos, programas e rede que declara de antemão. Comece pelo template e compartilhe como repositórios git.',
     },
+  },
+  metaWorkspace: {
+    eyebrow: 'Meta Workspace',
+    titleTop: 'Vários repositórios.',
+    titleBottom: 'Um só workspace.',
+    lead: 'Registre os repositórios em que você trabalha, um frontend, as APIs que ele chama, a biblioteca compartilhada, e busque, pergunte e trabalhe entre eles. Cada um mantém seu próprio histórico Git e seu próprio índice: não é um monorepo, e o Brokspace nunca escreve dentro deles.',
+    legend: 'Status de cada recurso:',
+    available: 'Disponível',
+    planned: 'Planejado',
+    items: [
+      {
+        status: 'available',
+        title: 'Membros, não um monorepo',
+        body: 'Adicione pastas locais ou URLs Git como membros, com relações tipadas como consumes_api. Adote aos poucos: um workspace sem membros funciona exatamente como antes.',
+      },
+      {
+        status: 'available',
+        title: 'Busca entre repositórios',
+        body: 'brok search --scope workspace, a ferramenta MCP brok_search e seus shards buscam em cada membro pelo índice dele, somente leitura, e informam o repositório de cada resultado.',
+      },
+      {
+        status: 'available',
+        title: 'Git hoje, atrás de um contrato',
+        body: 'O Git é o provedor de controle de versão embutido e se comporta como antes. O controle de versão fica atrás de um contrato de capacidades, para que outros sistemas possam ser adicionados sem mudar o resto.',
+      },
+      {
+        status: 'planned',
+        title: 'Contexto de engenharia e agentes',
+        body: 'Provedores que trazem contexto de outras ferramentas e executam agentes com limites de permissão estão desenhados, não entregues. Nenhuma integração de terceiros está disponível ainda.',
+      },
+    ],
+    docs: 'Leia os conceitos',
   },
   localFirst: {
     eyebrow: 'Local-first',
