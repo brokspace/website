@@ -72,6 +72,29 @@ Abra uma pasta de projeto e execute **Brokspace: Set Up
 Workspace** na barra lateral do Brokspace ou na Paleta de Comandos. Isso cria
 `.brokspace/brok.yml`, indexa a pasta e inicia o Brokspace.
 
+## O workspace com o chat em primeiro lugar
+
+Clicar no ícone do Brokspace na barra de atividades abre o chat. As configurações e o histórico ficam na mesma barra lateral, então você não sai dela para configurar ou retomar o trabalho.
+
+![Buscando em um workspace pelo significado no VS Code com o Brokspace](https://raw.githubusercontent.com/brokspace/vscode/main/docs/images/search.gif)
+
+- **Primeiros passos.** Uma lista curta leva você de como seus dados são tratados, passando pelo brok e pela configuração da pasta, até a primeira pergunta. O modelo é opcional: pule e retome depois. **Brokspace: Get Started** mostra a lista de novo.
+- **Chat.** As respostas citam o código de onde vêm. Digite `/` para os comandos (`/review`, `/skill`, `/search`, `/remember`); as setas para cima e para baixo recuperam prompts anteriores.
+- **Contexto.** Anexe o arquivo ativo, a seleção, arquivos que você escolher ou os erros do arquivo. Eles aparecem como chips antes do envio, com o que foi feito com cada um.
+- **Atividade.** Sob cada resposta, os passos que o assistente deu e se cada um só leu, enviou sua pergunta ao seu LLM ou alterou algo. Salvar uma memória pede confirmação.
+- **Histórico.** Busque, retome, renomeie e apague conversas anteriores do workspace.
+- **Configurações.** O modelo, a memória, os workspaces vinculados, as métricas e o diagnóstico, em uma aba ao lado do chat.
+
+### O chat da barra lateral e o `@brokspace` no Copilot Chat
+
+Os dois usam o mesmo brok, índice e memórias. O chat da barra lateral é a experiência completa (chips de contexto, histórico, atividade, primeiros passos) e funciona em qualquer editor que rode a extensão. O `@brokspace` é o mesmo agente como participante do chat do próprio editor, onde ele tem a API de Chat: um caminho prático quando você já usa o Copilot Chat, sem os controles próprios do chat do Brokspace.
+
+### O que fica local e o que é enviado
+
+- Local: o índice, as memórias, o histórico de conversas e a busca. A própria extensão só usa a rede para o download opcional do brok, depois da sua confirmação.
+- Enviado ao seu modelo: quando você pergunta, o brok envia a pergunta, os trechos que recuperou, os turnos recentes da conversa e o contexto que você anexou ao LLM que você configurou. Com um modelo local (Ollama, LM Studio), isso fica na sua máquina.
+- O contexto anexado nunca inclui arquivos com credenciais nem arquivos ignorados pelo Git, segredos em texto são ocultados e os tamanhos são limitados. Sem um LLM configurado, nada é enviado.
+
 ## O que você pode fazer
 
 - Buscar no workspace e nos workspaces vinculados pelo significado ou nome.

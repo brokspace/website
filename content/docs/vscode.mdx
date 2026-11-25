@@ -68,6 +68,29 @@ Open a project folder, then run **Brokspace: Set Up Workspace** from the
 Brokspace sidebar or Command Palette. It creates `.brokspace/brok.yml`,
 indexes the folder and starts Brokspace.
 
+## The chat-first workspace
+
+Clicking the Brokspace icon in the activity bar opens the chat. Settings and history are in the same sidebar, so you never leave it to configure or resume work.
+
+![Searching a workspace by meaning in VS Code with Brokspace](https://raw.githubusercontent.com/brokspace/vscode/main/docs/images/search.gif)
+
+- **Getting started.** A short checklist takes you from how your data is handled, through brok and the folder setup, to your first question. A model is optional; skip it and resume later. **Brokspace: Get Started** shows it again.
+- **Chat.** Answers cite the code they come from. Type `/` for commands (`/review`, `/skill`, `/search`, `/remember`); Up and Down recall earlier prompts.
+- **Context.** Attach the active file, the selection, files you pick or the file's errors. They show as chips before you send, with what was done to them.
+- **Activity.** Under each answer, the steps the assistant took and whether each only read, sent your question to your LLM, or changed something. Saving a memory asks first.
+- **History.** Search, resume, rename and delete earlier chats of the workspace.
+- **Settings.** The model, memory, linked workspaces, metrics and diagnostics, in a tab next to the chat.
+
+### The sidebar chat and `@brokspace` in Copilot Chat
+
+Both use the same brok, index and memories. The sidebar chat is the full experience (context chips, history, activity, getting started) and works in any editor that runs the extension. `@brokspace` is the same agent as a participant of the editor's own chat, where that editor has the Chat API: a convenient way in when you already use Copilot Chat, without the Brokspace chat's own controls.
+
+### What stays local and what is sent
+
+- Local: the index, memories, chat history and search. The extension itself only touches the network for the optional brok download, after you agree.
+- Sent to your model: when you ask, brok sends your question, the passages it retrieved, the recent turns of the conversation and the context you attached to the LLM you configured. With a local model (Ollama, LM Studio) that stays on your machine.
+- Attached context never includes files that hold credentials or files Git ignores, secrets in text are masked, and sizes are bounded. With no LLM configured, nothing is sent.
+
 ## What you can do
 
 - Search the workspace and linked workspaces by meaning or by name.
