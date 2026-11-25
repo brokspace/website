@@ -1,4 +1,5 @@
 ---
+
 title: "Concepts"
 description: "How Brokspace thinks about repositories, workspaces and integrations, and what exists today."
 ---
@@ -11,13 +12,13 @@ How Brokspace thinks about repositories, workspaces and integrations, and what e
 
 A Meta Workspace coordinates several independent repositories as one engineering environment, for example a frontend, the APIs it calls and a shared library. You create it with `brok init` in the directory that coordinates them and register the repositories as **members** ([how](/docs/meta-workspace)). **Available** (opt-in; without members nothing changes).
 
-| | Meta Workspace | Monorepo | Git superproject (submodules) |
-|---|---|---|---|
-| Repositories | Several, independent | One | Several, pinned by the parent |
-| History | Each keeps its own | One shared | Each its own; the parent records commit pointers |
-| Source control owner | Your existing tools | Your existing tools | Git |
-| What Brokspace adds | Search, memory and agents across them, read only | Search, memory and agents in it | Same as a monorepo for what is checked out |
-| Writes inside a repository | Never | Only what you ask | Only what you ask |
+|                            | Meta Workspace                                   | Monorepo                        | Git superproject (submodules)                    |
+| -------------------------- | ------------------------------------------------ | ------------------------------- | ------------------------------------------------ |
+| Repositories               | Several, independent                             | One                             | Several, pinned by the parent                    |
+| History                    | Each keeps its own                               | One shared                      | Each its own; the parent records commit pointers |
+| Source control owner       | Your existing tools                              | Your existing tools             | Git                                              |
+| What Brokspace adds        | Search, memory and agents across them, read only | Search, memory and agents in it | Same as a monorepo for what is checked out       |
+| Writes inside a repository | Never                                            | Only what you ask               | Only what you ask                                |
 
 A Meta Workspace does not replace Git, your editor, your CI or your coding agents. It is a layer that lets them see the same set of repositories.
 
@@ -45,11 +46,11 @@ A member has a stable lowercase kebab-case **id**, a location (a local `path`, o
 
 "Provider" means one of three integration categories, each with its own contract ([ADR 0015](https://github.com/brokspace/brok/blob/main/docs/adr/0015-provider-registry-and-source-control-contract.md)). They are unrelated to LLM providers (`llm.providers`) and to the Hub's distribution providers.
 
-| Category | Responsibility | Status |
-|---|---|---|
-| **Source control** | Detect repositories, changed paths, history, nested repositories | **Available**: Git is the built-in default and behaves exactly as before. A registry and a capability contract exist in `brok-core`; Git is the only adapter. Other systems are **planned** and tracked in brokspace/brok#110 |
-| **Engineering context** | Bring decisions, sessions and design context from other tools | **Planned**. Only designed. No integration, including Entire, is implemented, and none is a source-control provider |
-| **Agent execution** | Run work through an external agent runtime under permission boundaries | **Planned**. Today agents reach Brokspace through MCP, skills and the `brok-agent` shard, which is not this category |
+| Category                | Responsibility                                                         | Status                                                                                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Source control**      | Detect repositories, changed paths, history, nested repositories       | **Available**: Git is the built-in default and behaves exactly as before. A registry and a capability contract exist in `brok-core`; Git is the only adapter. Other systems are **planned** and tracked in brokspace/brok#110 |
+| **Engineering context** | Bring decisions, sessions and design context from other tools          | **Planned**. Only designed. No integration, including Entire, is implemented, and none is a source-control provider                                                                                                           |
+| **Agent execution**     | Run work through an external agent runtime under permission boundaries | **Planned**. Today agents reach Brokspace through MCP, skills and the `brok-agent` shard, which is not this category                                                                                                          |
 
 A source-control provider declares capabilities (`status`, `history`, `submodules`, later `diff`, `watch`, `worktrees`). An operation it does not support fails with an explicit `Unsupported` error; it never returns an empty success, so a partial provider is visible instead of silently wrong.
 
@@ -70,8 +71,8 @@ The source-control contract and how to add and test an adapter are in [architect
 
 ## When a provider or member is unavailable
 
-| Symptom | Cause | What to do |
-|---|---|---|
-| A member is skipped in a workspace search | It has no `.brokspace` of its own, or its index cannot be read | `brok workspace status`; run `brok init` there and index it |
-| A git URL member shows "not cloned" | Registered with `--no-fetch`, or the clone failed | `brok workspace sync <id>`; private repositories need SSH keys or a credential helper |
-| A provider operation reports `Unsupported` | The provider lacks that capability | Not an error in your setup; use another operation or provider |
+| Symptom                                    | Cause                                                          | What to do                                                                            |
+| ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| A member is skipped in a workspace search  | It has no `.brokspace` of its own, or its index cannot be read | `brok workspace status`; run `brok init` there and index it                           |
+| A git URL member shows "not cloned"        | Registered with `--no-fetch`, or the clone failed              | `brok workspace sync <id>`; private repositories need SSH keys or a credential helper |
+| A provider operation reports `Unsupported` | The provider lacks that capability                             | Not an error in your setup; use another operation or provider                         |

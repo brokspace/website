@@ -1,4 +1,5 @@
 ---
+
 title: "Meta Workspace"
 description: "A Meta Workspace coordinates several independent repositories as one engineering environment: a frontend, the APIs it calls, the shared library."
 ---
@@ -18,14 +19,14 @@ brok workspace relate frontend consumes_api payment-api
 brok workspace status
 ```
 
-| Command | What it does |
-|---|---|
-| `add <path> [--id] [--name] [-d]` | Registers a directory. Repeating it is a no-op. The id defaults to the directory name as kebab-case. |
-| `list [--json]` | Members and relationships. |
-| `status [--json]` | Per member: repository, plain directory or missing; whether it has its own Brokspace; commit and uncommitted changes (through the Git provider). |
-| `remove <id>` | Unregisters a member and its relationships. The directory is never touched. |
-| `relate <from> <kind> <to>` / `unrelate` | Records or removes a typed relationship. |
-| `discover [dir]` | Lists repositories directly inside `dir` (default: the parent of the workspace) that are not members. |
+| Command                                  | What it does                                                                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `add <path> [--id] [--name] [-d]`        | Registers a directory. Repeating it is a no-op. The id defaults to the directory name as kebab-case.                                             |
+| `list [--json]`                          | Members and relationships.                                                                                                                       |
+| `status [--json]`                        | Per member: repository, plain directory or missing; whether it has its own Brokspace; commit and uncommitted changes (through the Git provider). |
+| `remove <id>`                            | Unregisters a member and its relationships. The directory is never touched.                                                                      |
+| `relate <from> <kind> <to>` / `unrelate` | Records or removes a typed relationship.                                                                                                         |
+| `discover [dir]`                         | Lists repositories directly inside `dir` (default: the parent of the workspace) that are not members.                                            |
 
 ## Configuration
 
@@ -33,7 +34,7 @@ brok workspace status
 workspace:
   members:
     payment-api:
-      path: ../payment-api        # relative to this workspace, stored that way so brok.yml can be committed
+      path: ../payment-api # relative to this workspace, stored that way so brok.yml can be committed
       description: Payments service
     frontend:
       path: ../frontend
