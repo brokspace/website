@@ -8,10 +8,10 @@ import type { Lang } from './i18n';
 const en = {
   meta: {
     description:
-      'Local-first search, agents and skills for every developer. Brokspace indexes your repositories on your machine and gives your LLM and your coding agents the context they need.',
+      'The Meta Workspace for AI-powered software engineering. Connect your repositories, your LLM and your coding agents in one local-first workspace, without replacing the Git, editor and agents you already use.',
   },
-  tagline: 'Your workspace, understood.',
-  pitch: 'Local-first search, agents and skills for every developer.',
+  tagline: 'The Meta Workspace for AI-powered Software Engineering.',
+  pitch: 'One workspace. Multiple repositories. Connected engineering intelligence.',
   nav: {
     skip: 'Skip to content',
     main: 'Main',
@@ -30,10 +30,10 @@ const en = {
   },
   hero: {
     badge: 'New',
-    announcement: 'Brokspace for VS Code: your workspace, understood',
-    titleTop: 'Your workspace,',
-    titleAccent: 'understood.',
-    lead: 'Brokspace indexes every repository you work in, on your machine, and gives you, your LLM and your coding agents the context they are missing.',
+    announcement: 'Brokspace for VS Code: search, chat and review in your editor',
+    titleTop: 'The Meta Workspace',
+    titleAccent: 'for AI-powered Software Engineering.',
+    lead: 'Connect your repositories, your LLM and your coding agents in one local-first workspace, without replacing the Git, editor and agents you already use. One workspace. Multiple repositories. Connected engineering intelligence.',
     cta: 'Get started',
   },
   worksWith: {
@@ -203,10 +203,10 @@ export type Messages = typeof en;
 const ptBr: Messages = {
   meta: {
     description:
-      'Busca, agentes e skills local-first para todo desenvolvedor. O Brokspace indexa seus repositórios na sua máquina e dá ao seu LLM e aos seus agentes de código o contexto de que precisam.',
+      'O Meta Workspace para Engenharia de Software com IA. Conecte seus repositórios, seu LLM e seus agentes de código em um workspace local-first, sem substituir o Git, o editor e os agentes que você já usa.',
   },
-  tagline: 'Seu workspace, compreendido.',
-  pitch: 'Busca, agentes e skills local-first para todo desenvolvedor.',
+  tagline: 'O Meta Workspace para Engenharia de Software com IA.',
+  pitch: 'Um workspace. Vários repositórios. Inteligência de engenharia conectada.',
   nav: {
     skip: 'Pular para o conteúdo',
     main: 'Principal',
@@ -225,10 +225,10 @@ const ptBr: Messages = {
   },
   hero: {
     badge: 'Novo',
-    announcement: 'Brokspace para VS Code: seu workspace, compreendido',
-    titleTop: 'Seu workspace,',
-    titleAccent: 'compreendido.',
-    lead: 'O Brokspace indexa cada repositório em que você trabalha, na sua máquina, e dá a você, ao seu LLM e aos seus agentes de código o contexto que falta.',
+    announcement: 'Brokspace para VS Code: busca, chat e revisão no editor',
+    titleTop: 'O Meta Workspace',
+    titleAccent: 'para Engenharia de Software com IA.',
+    lead: 'Conecte seus repositórios, seu LLM e seus agentes de código em um workspace local-first, sem substituir o Git, o editor e os agentes que você já usa. Um workspace. Vários repositórios. Inteligência de engenharia conectada.',
     cta: 'Começar',
   },
   worksWith: {
