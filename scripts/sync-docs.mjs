@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 const REPO = 'https://github.com/brokspace/brok';
 const GUIDES = [
   'getting-started',
+  'concepts',
+  'meta-workspace',
   'local-llm',
   'skills',
   'shards',
