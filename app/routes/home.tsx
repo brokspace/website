@@ -73,6 +73,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <Hero stars={stars} />
         <WorksWith />
         <Features />
+        <MetaWorkspace />
         <LocalFirst />
         <Modes />
         <GetStarted />
@@ -482,6 +483,54 @@ function Features() {
 }
 
 /* ------------------------------------------------------------------ */
+
+function MetaWorkspace() {
+  const m = useMessages().metaWorkspace;
+  return (
+    <section id="meta-workspace" className="mx-auto max-w-6xl px-5 pb-24 sm:px-8 sm:pb-32">
+      <SectionHeading
+        eyebrow={m.eyebrow}
+        title={
+          <>
+            {m.titleTop}
+            <br className="hidden sm:block" /> {m.titleBottom}
+          </>
+        }
+      >
+        {m.lead}
+      </SectionHeading>
+      <p className="mt-8 text-sm text-mist">{m.legend}</p>
+      <ul className="mt-3 grid gap-4 sm:grid-cols-2">
+        {m.items.map((item) => (
+          <li
+            key={item.title}
+            className="rounded-2xl border border-white/8 bg-gradient-to-b from-white/[0.035] to-transparent p-6"
+          >
+            <span
+              className={cn(
+                'inline-block rounded-full border px-2.5 py-0.5 font-mono text-xs',
+                item.status === 'available'
+                  ? 'border-forge/40 bg-forge/10 text-forge'
+                  : 'border-white/15 text-mist',
+              )}
+            >
+              {item.status === 'available' ? m.available : m.planned}
+            </span>
+            <h3 className="mt-4 text-lg font-semibold tracking-[-0.015em]">{item.title}</h3>
+            <p className="mt-2 leading-relaxed text-mist">{item.body}</p>
+          </li>
+        ))}
+      </ul>
+      <SiteLink
+        to="/docs/concepts"
+        className="mt-8 inline-flex items-center gap-1.5 font-medium text-forge hover:underline"
+      >
+        {m.docs}
+        <ArrowRight className="size-4" aria-hidden="true" />
+      </SiteLink>
+    </section>
+  );
+}
 
 function LocalFirst() {
   const m = useMessages().localFirst;
