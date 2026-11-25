@@ -3,8 +3,8 @@ import { i18n } from './i18n';
 
 export const appName = 'Brokspace';
 export const siteUrl = 'https://brokspace.org';
-export const tagline = 'Your workspace, understood.';
-export const pitch = 'Local-first search, agents and skills for every developer.';
+export const tagline = 'The Meta Workspace for AI-powered Software Engineering.';
+export const pitch = 'One workspace. Multiple repositories. Connected engineering intelligence.';
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';

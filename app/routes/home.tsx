@@ -219,7 +219,7 @@ function Hero({ stars }: { stars: number | null }) {
             {m.announcement}
             <ArrowRight className="size-3.5" aria-hidden="true" />
           </SiteLink>
-          <h1 className="mt-8 animate-rise text-[clamp(3rem,9vw,6.75rem)] leading-[0.92] font-semibold tracking-[-0.045em] text-balance [animation-delay:80ms]">
+          <h1 className="mt-8 animate-rise text-[clamp(2.25rem,6.5vw,4.75rem)] leading-[0.98] font-semibold tracking-[-0.045em] text-balance [animation-delay:80ms]">
             {m.titleTop}
             <br />
             <span className="bg-gradient-to-br from-forge-300 via-forge to-forge-600 bg-clip-text text-transparent">
