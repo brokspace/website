@@ -22,6 +22,7 @@ const GUIDES = [
   'meta-workspace',
   'local-llm',
   'skills',
+  'shard-tutorial',
   'shards',
   'integrations',
   'memory',
