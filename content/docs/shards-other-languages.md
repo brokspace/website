@@ -1,4 +1,5 @@
 ---
+
 title: "Shards in Python, TypeScript and Java"
 description: "A shard is a program that talks to the local event bus, so it can be written in any language."
 ---
