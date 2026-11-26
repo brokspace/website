@@ -24,6 +24,7 @@ const GUIDES = [
   'skills',
   'shard-tutorial',
   'shards',
+  'shards-other-languages',
   'integrations',
   'memory',
   'troubleshooting',
